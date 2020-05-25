@@ -30,35 +30,35 @@ module symmetry
      function spg_get_symmetry(rotations,translations,nops,lattice,&
           positions,types,natoms,symprec) bind (C, name="spg_get_symmetry")
        use iso_c_binding
+       integer(kind=C_INT),value :: nops
+       integer(kind=C_INT),value :: natoms
        integer(kind=C_INT) :: spg_get_symmetry
        integer(kind=C_INT),dimension(3,3,nops) :: rotations
        real(kind=C_DOUBLE),dimension(3,nops) :: translations
-       integer(kind=C_INT),value :: nops
        real(kind=C_DOUBLE),dimension(3,3) :: lattice
        real(kind=C_DOUBLE),dimension(3,natoms) :: positions
        integer(kind=C_INT),dimension(natoms) :: types
-       integer(kind=C_INT),value :: natoms
        real(kind=C_DOUBLE),value :: symprec
      end function spg_get_symmetry
      function spg_get_international(symbol,lattice,&
           positions,types,natoms,symprec) bind (C, name="spg_get_international")
        use iso_c_binding
+       integer(kind=C_INT),value :: natoms
        integer(kind=C_INT) :: spg_get_international
        character(kind=C_CHAR),dimension(11) :: symbol
        real(kind=C_DOUBLE),dimension(3,3) :: lattice
        real(kind=C_DOUBLE),dimension(3,natoms) :: positions
        integer(kind=C_INT),dimension(natoms) :: types
-       integer(kind=C_INT),value :: natoms
        real(kind=C_DOUBLE),value :: symprec
      end function spg_get_international
      function spg_get_multiplicity(lattice,&
           positions,types,natoms,symprec) bind (C, name="spg_get_multiplicity")
        use iso_c_binding
+       integer(kind=C_INT),value :: natoms
        integer(kind=C_INT) :: spg_get_multiplicity
        real(kind=C_DOUBLE),dimension(3,3) :: lattice
        real(kind=C_DOUBLE),dimension(3,natoms) :: positions
        integer(kind=C_INT),dimension(natoms) :: types
-       integer(kind=C_INT),value :: natoms
        real(kind=C_DOUBLE),value :: symprec
      end function spg_get_multiplicity
   end interface
