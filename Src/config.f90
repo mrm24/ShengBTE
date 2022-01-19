@@ -55,9 +55,14 @@ module config
   real(kind=8),allocatable :: qrotations_orig(:,:,:)
   real(kind=8),allocatable :: symmetrizers(:,:,:)
   character(len=10) :: international
-
+  ! Vp matrix
+  complex(kind=8),allocatable :: Vp_plus_matrix(:,:), Vp_minus_matrix(:,:)
+  ! Ind
+  integer(kind=4),allocatable :: Indof2ndPhonon_plus(:),Indof3rdPhonon_plus(:)
+  integer(kind=4),allocatable :: Indof2ndPhonon_minus(:),Indof3rdPhonon_minus(:)
+  real(kind=8),allocatable :: Gamma_plus(:),Gamma_minus(:)
   ! MPI variables, assigned in ShengBTE.f90.
-  integer(kind=4) :: myid,numprocs
+  integer(kind=4) :: myid,numprocs,nstates
 
 contains
 
