@@ -485,9 +485,27 @@ contains
     end do
 
     gmax=14.
-    alpha=(2.*pi*bohr2nm/dnrm2(3,lattvec(:,1),1))**2
+    alpha=(2.*pi/celldm(1))**2
     geg=gmax*4.*alpha
-    ncell_g=int(sqrt(geg)/cell_g(:,0))+1
+    ! Estimate of nrx1,nrx2,nrx3 generating all vectors up to G^2 < geg
+    ! Only for dimensions where periodicity is present, e.g. if nr1=1
+    ! and nr2=1, then the G-vectors run along nr3 only.
+    ! (useful if system is in vacuum, e.g. 1D or 2D)
+    IF (scell(1) == 1) THEN
+      ncell_g(1) = 0
+    ELSE
+      ncell_g(1) = int ( sqrt (geg) / cell_g(1,0) ) + 1
+    ENDIF
+    IF (scell(2) == 1) THEN
+      ncell_g(2) = 0
+    ELSE
+      ncell_g(2) = int ( sqrt (geg) / cell_g(2,0) ) + 1
+    ENDIF
+    IF (scell(3) == 1) THEN
+      ncell_g(3) = 0
+    ELSE
+      ncell_g(3) = int ( sqrt (geg) / cell_g(3,0) ) + 1
+    ENDIF
 
     dyn_s=0.
     ddyn_s=0.
