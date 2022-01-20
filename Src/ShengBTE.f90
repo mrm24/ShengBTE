@@ -521,9 +521,11 @@ program ShengBTE
                 Naccum_plus=Naccum_plus+N_plus(mm-1)
                 Naccum_minus=Naccum_minus+N_minus(mm-1)
             end if
-            call Ind_driver(mm,energy,velocity,eigenvect,Nlist,List,IJK,N_plus,N_minus,Naccum_plus,Naccum_minus, &
+            call Ind_driver(mm,energy,velocity,eigenvect,Nlist,List,IJK,&
+                 N_plus,N_minus,Naccum_plus,Naccum_minus, &
                  Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,&
-                 rate_scatt_plus_reduce(i,ll),rate_scatt_minus_reduce(i,ll),Pspace_plus_total_reduce(i,ll),Pspace_minus_total_reduce(i,ll))
+                 rate_scatt_plus_reduce(i,ll),rate_scatt_minus_reduce(i,ll),&
+                 Pspace_plus_total_reduce(i,ll),Pspace_minus_total_reduce(i,ll))
 
         enddo 
         call MPI_BARRIER(MPI_COMM_WORLD,ierr)
