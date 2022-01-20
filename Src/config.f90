@@ -428,9 +428,9 @@ contains
     real(kind=8) :: base_sigma
     integer(kind=4) :: nu
     base_sigma=0.d0
-    base_sigma=DMAX1((dot_product(rlattvec(:,1),v)/ngrid(1))**2,&
-                     (dot_product(rlattvec(:,2),v)/ngrid(2))**2,&
-                     (dot_product(rlattvec(:,3),v)/ngrid(3))**2)
+    base_sigma=MAX((dot_product(rlattvec(:,1),v)/ngrid(1))**2,&
+                   (dot_product(rlattvec(:,2),v)/ngrid(2))**2,&
+                   (dot_product(rlattvec(:,3),v)/ngrid(3))**2)
     base_sigma=sqrt(base_sigma/2.)
 
   end function base_sigma
