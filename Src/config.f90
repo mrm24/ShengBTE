@@ -55,9 +55,14 @@ module config
   real(kind=8),allocatable :: qrotations_orig(:,:,:)
   real(kind=8),allocatable :: symmetrizers(:,:,:)
   character(len=10) :: international
-
+  ! Vp matrix
+  complex(kind=8),allocatable :: Vp_plus_matrix(:,:), Vp_minus_matrix(:,:)
+  ! Ind
+  integer(kind=4),allocatable :: Indof2ndPhonon_plus(:),Indof3rdPhonon_plus(:)
+  integer(kind=4),allocatable :: Indof2ndPhonon_minus(:),Indof3rdPhonon_minus(:)
+  real(kind=8),allocatable :: Gamma_plus(:),Gamma_minus(:)
   ! MPI variables, assigned in ShengBTE.f90.
-  integer(kind=4) :: myid,numprocs
+  integer(kind=4) :: myid,numprocs,nstates
 
 contains
 
@@ -420,18 +425,31 @@ contains
   function base_sigma(v)
     implicit none
     real(kind=8),intent(in) :: v(3)
-
     real(kind=8) :: base_sigma
-
     integer(kind=4) :: nu
+    base_sigma=0.d0
+    base_sigma=DMAX1((dot_product(rlattvec(:,1),v)/ngrid(1))**2,&
+                     (dot_product(rlattvec(:,2),v)/ngrid(2))**2,&
+                     (dot_product(rlattvec(:,3),v)/ngrid(3))**2)
+    base_sigma=sqrt(base_sigma/2.)
 
-    base_sigma=0.
-    do nu=1,3
-       base_sigma=base_sigma+(dot_product(rlattvec(:,nu),v)/ngrid(nu))**2
-    end do
-
-    base_sigma=sqrt(base_sigma/6.)
   end function base_sigma
+
+ ! function base_sigma(v)
+ !   implicit none
+ !   real(kind=8),intent(in) :: v(3)
+ !
+ !   real(kind=8) :: base_sigma
+ !
+ !   integer(kind=4) :: nu
+ !
+ !   base_sigma=0.
+ !   do nu=1,3
+ !      base_sigma=base_sigma+(dot_product(rlattvec(:,nu),v)/ngrid(nu))**2
+ !   end do
+ !
+ !   base_sigma=sqrt(base_sigma/6.)
+ ! end function base_sigma
 
   
   ! Force a real 3x3 Cartesian tensor to fulfill all the symmetries.

@@ -36,7 +36,7 @@ program ShengBTE
   include "mpif.h"
 
   real(kind=8) :: kappa_sg(3,3),kappa_old(3,3),relchange
-  integer(kind=4) :: i,j,ii,jj,kk,ll,mm
+  integer(kind=4) :: i,j,ii,jj,kk,ll,mm,nn
   integer(kind=4) :: Tcounter
   real(kind=8),allocatable :: energy(:,:),q0(:,:),q0_reduced(:,:),velocity(:,:,:),velocity_z(:,:)
   complex(kind=8),allocatable :: eigenvect(:,:,:)
@@ -44,6 +44,7 @@ program ShengBTE
   real(kind=8),allocatable :: grun(:,:)
 
   real(kind=8),allocatable :: rate_scatt(:,:),rate_scatt_plus(:,:),rate_scatt_minus(:,:)
+  real(kind=8),allocatable :: rate_scatt_plus_reduce(:,:),rate_scatt_minus_reduce(:,:)
   real(kind=8),allocatable :: tau_zero(:,:),tau(:,:),tau_b(:,:),tau2(:,:),tau_b2(:,:)
   real(kind=8),allocatable :: dos(:),pdos(:,:),rate_scatt_isotope(:,:)
   real(kind=8),allocatable :: F_n(:,:,:),F_n_0(:,:,:),F_n_aux(:,:)
@@ -62,12 +63,10 @@ program ShengBTE
   integer(kind=4),allocatable :: nequi(:),list(:)
   integer(kind=4),allocatable :: AllEquiList(:,:),TypeofSymmetry(:,:),eqclasses(:)
   integer(kind=4),allocatable :: N_plus(:),N_minus(:)
-  integer(kind=4),allocatable :: Indof2ndPhonon_plus(:),Indof3rdPhonon_plus(:)
-  integer(kind=4),allocatable :: Indof2ndPhonon_minus(:),Indof3rdPhonon_minus(:)
+  integer(kind=4) :: Naccum_plus, Naccum_minus
   real(kind=8) :: radnw,kappa_or_old
-  real(kind=8),allocatable :: Gamma_plus(:),Gamma_minus(:)
-  real(kind=8),allocatable :: Pspace_plus_total(:,:)
-  real(kind=8),allocatable :: Pspace_minus_total(:,:)
+  real(kind=8),allocatable :: Pspace_plus_total(:,:), Pspace_plus_total_reduce(:,:)
+  real(kind=8),allocatable :: Pspace_minus_total(:,:), Pspace_minus_total_reduce(:,:)
   real(kind=8),allocatable :: ffunc(:,:),radnw_range(:),v_or(:,:),F_or(:,:)
   real(kind=8),allocatable :: kappa_or(:),kappa_wires(:,:),kappa_wires_reduce(:,:)
 
@@ -294,12 +293,11 @@ program ShengBTE
   allocate(rate_scatt(Nbands,Nlist))
   allocate(rate_scatt_plus(Nbands,Nlist))
   allocate(rate_scatt_minus(Nbands,Nlist))
+  allocate(rate_scatt_plus_reduce(Nbands,Nlist))
+  allocate(rate_scatt_minus_reduce(Nbands,Nlist))
   allocate(tau_zero(Nbands,Nlist))
   allocate(tau(Nbands,Nlist))
   allocate(tau2(Nbands,nptk))
-  rate_scatt=0.d0
-  rate_scatt_plus=0.d0
-  rate_scatt_minus=0.d0
   allocate(radnw_range(nwires))
   do ii=1,nwires
      radnw_range(ii)=rmin+(ii-1.0)*dr
@@ -312,7 +310,7 @@ program ShengBTE
   ! Phase space volume per mode and their sum.
   allocate(Pspace_plus_total(Nbands,Nlist))
   allocate(Pspace_minus_total(Nbands,Nlist))
-
+  
   call NP_driver(energy,velocity,Nlist,List,IJK,&
        N_plus,Pspace_plus_total,N_minus,Pspace_minus_total)
 
@@ -321,6 +319,8 @@ program ShengBTE
 
   if(myid.eq.0)write(*,*) "Info: Ntotal_plus =",Ntotal_plus
   if(myid.eq.0)write(*,*) "Info: Ntotal_minus =",Ntotal_minus
+
+
 
   if(myid.eq.0) then
      open(1,file="BTE.P3_plus",status="replace")
@@ -415,6 +415,7 @@ program ShengBTE
 
   call mode_grun(energy,eigenvect,Ntri,Phi,R_j,R_k,&
        Index_i,Index_j,Index_k,grun)
+
   write(aux,"(I0)") Nbands
   if(myid.eq.0) then
      open(1,file="BTE.gruneisen",status="replace")
@@ -443,23 +444,46 @@ program ShengBTE
   close(101)
   deallocate(grun)
 
+  if (myid.eq.0) write(*,*) "Info: max(N_plus), max(N_minus)", MAXVAL(N_plus), MAXVAL(N_minus)
+  if (myid.eq.0) write(*,*) "Info: calculating Vp_plus and Vp_minus"
+  call calculate_Vp(energy,velocity,eigenvect,Nlist,List,&
+       Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,IJK, MAX(MAXVAL(N_plus), MAXVAL(N_minus)))
+
   ! This is the most expensive part of the calculation: obtaining the
   ! three-phonon scattering amplitudes for all allowed processes.
   ! When the iterative solution to the full linearized BTE is not
   ! requested (i.e., when the relaxation-time approximation is
   ! enough) we use optimized routines with a much smaller memory footprint.
   ! weighted phase space volume per mode .
+  nstates=ceiling(float(nlist*nbands)/numprocs)
+  Naccum_plus=0
+  Naccum_minus=0
+  do nn=1,nstates
+      mm=myid*nstates+nn
+      if (mm.gt.nlist*nbands) cycle
+      Naccum_plus=Naccum_plus+N_plus(mm)
+      Naccum_minus=Naccum_minus+N_minus(mm)
+  enddo
+
   allocate(Pspace_plus_total(Nbands,Nlist))
+  allocate(Pspace_plus_total_reduce(Nbands,Nlist))
   allocate(Pspace_minus_total(Nbands,Nlist))
+  allocate(Pspace_minus_total_reduce(Nbands,Nlist))
   open(303,file="BTE.KappaTensorVsT_RTA")
   if(convergence) then
      open(403,file="BTE.KappaTensorVsT_CONV")
-     allocate(Indof2ndPhonon_plus(Ntotal_plus))
-     allocate(Indof3rdPhonon_plus(Ntotal_plus))
-     allocate(Indof2ndPhonon_minus(Ntotal_minus))
-     allocate(Indof3rdPhonon_minus(Ntotal_minus))
-     allocate(Gamma_plus(Ntotal_plus))
-     allocate(Gamma_minus(Ntotal_minus))
+     allocate(Indof2ndPhonon_plus(Naccum_plus))
+     allocate(Indof3rdPhonon_plus(Naccum_plus))
+     allocate(Indof2ndPhonon_minus(Naccum_minus))
+     allocate(Indof3rdPhonon_minus(Naccum_minus))
+     allocate(Gamma_plus(Naccum_plus))
+     allocate(Gamma_minus(Naccum_minus))
+     Indof2ndPhonon_plus=0 
+     Indof3rdPhonon_plus=0
+     Indof2ndPhonon_minus=0
+     Indof3rdPhonon_minus=0
+     Gamma_plus=0.d0
+     Gamma_minus=0.d0
   endif
   if (myid.eq.0) print*, "Info: start calculating kappa"
   do Tcounter=1,CEILING((T_max-T_min)/T_step)+1
@@ -472,12 +496,46 @@ program ShengBTE
         path="T"//trim(adjustl(aux2))//"K"
         call change_directory(trim(adjustl(path))//C_NULL_CHAR)
      endif
+
+     rate_scatt=0.d0
+     rate_scatt_plus=0.d0
+     rate_scatt_plus_reduce=0.d0
+     rate_scatt_minus=0.d0
+     rate_scatt_minus_reduce=0.d0
+     Pspace_plus_total=0.d0
+     Pspace_plus_total_reduce=0.d0
+     Pspace_minus_total=0.d0
+     Pspace_minus_total_reduce=0.d0
+
      if(convergence) then
-        call Ind_driver(energy,velocity,eigenvect,Nlist,List,IJK,N_plus,N_minus,&
-             Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,&
-             Indof2ndPhonon_plus,Indof3rdPhonon_plus,Gamma_plus,&
-             Indof2ndPhonon_minus,Indof3rdPhonon_minus,Gamma_minus,rate_scatt,&
-             rate_scatt_plus,rate_scatt_minus,Pspace_plus_total,Pspace_minus_total)
+        do nn=1,nstates
+            mm=myid*nstates+nn
+            i=modulo(mm-1,Nbands)+1
+            ll=int((mm-1)/Nbands)+1
+
+            if (mm.gt.nlist*nbands) cycle
+            if (nn.eq.1) then
+                Naccum_plus=0
+                Naccum_minus=0
+            else
+                Naccum_plus=Naccum_plus+N_plus(mm-1)
+                Naccum_minus=Naccum_minus+N_minus(mm-1)
+            end if
+            call Ind_driver(mm,energy,velocity,eigenvect,Nlist,List,IJK,N_plus,N_minus,Naccum_plus,Naccum_minus, &
+                 Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,&
+                 rate_scatt_plus_reduce(i,ll),rate_scatt_minus_reduce(i,ll),Pspace_plus_total_reduce(i,ll),Pspace_minus_total_reduce(i,ll))
+
+        enddo 
+        call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+        call MPI_ALLREDUCE(rate_scatt_plus_reduce,rate_scatt_plus,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
+             MPI_SUM,MPI_COMM_WORLD,ll)
+        call MPI_ALLREDUCE(rate_scatt_minus_reduce,rate_scatt_minus,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
+             MPI_SUM,MPI_COMM_WORLD,ll)
+        call MPI_ALLREDUCE(Pspace_plus_total_reduce,Pspace_plus_total,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
+             MPI_SUM,MPI_COMM_WORLD,ll)
+        call MPI_ALLREDUCE(Pspace_minus_total_reduce,Pspace_minus_total,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
+             MPI_SUM,MPI_COMM_WORLD,ll)
+        rate_scatt=rate_scatt_plus+rate_scatt_minus
      else
         call RTA_driver(energy,velocity,eigenvect,Nlist,List,IJK,&
              Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,rate_scatt,rate_scatt_plus,&
@@ -566,39 +624,44 @@ program ShengBTE
              sum(sum(ThConductivity,dim=1),reshape((/((i==j,i=1,3),j=1,3)/),(/3,3/)))/3.
         write(303,"(F7.1,9E14.5)") T,sum(ThConductivity,dim=1)
         flush(303)
-
-        ! Iterate to convergence if desired.
-        if(convergence) then
-           do ii=1,maxiter
-              kappa_old=sum(ThConductivity,dim=1)
-              call iteration(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,&
-                   Ntotal_plus,Ntotal_minus,Indof2ndPhonon_plus,Indof3rdPhonon_plus,&
-                   Indof2ndPhonon_minus,Indof3rdPhonon_minus,energy,velocity,&
-                   Gamma_plus,Gamma_minus,tau_zero,F_n)
-              ! Correct F_n to prevent it drifting away from the symmetry of the system.
-              do ll=1,nptk
-                 F_n(:,ll,:)=transpose(matmul(symmetrizers(:,:,ll),transpose(F_n(:,ll,:))))
-              end do
-              call TConduct(energy,velocity,F_n,ThConductivity,ThConductivityMode)
-              do ll=1,nbands
-                 call symmetrize_tensor(ThConductivity(ll,:,:))
-              end do
-              write(2001,"(I9,"//trim(adjustl(aux))//"E20.10)") ii,ThConductivity
-              flush(2001)
-              write(2002,"(I9,9E20.10)") ii,sum(ThConductivity,dim=1)
-              flush(2002)
-              write(2003,"(I9,E20.10)") ii,&
-                   sum(sum(ThConductivity,dim=1),reshape((/((i==j,i=1,3),j=1,3)/),(/3,3/)))/3.
-              flush(2003)
-              relchange=twonorm3x3(sum(ThConductivity,dim=1)-kappa_old)/&
-                   twonorm3x3(kappa_old)
-              write(*,*) "Info: Iteration",ii
-              write(*,*) "Info:","Relative change","=",relchange
-              if(relchange.lt.eps)exit
-           end do
-           write(403,"(F7.1,9E14.5,I6)") T,sum(ThConductivity,dim=1),ii
-           flush(403)
-        end if
+     endif
+     ! paralleled iteration
+     ! Iterate to convergence if desired.
+     if(convergence) then
+        do ii=1,maxiter
+           call iteration(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,&
+                energy,velocity,tau_zero,F_n)
+           if(myid.eq.0) then
+               kappa_old=sum(ThConductivity,dim=1)
+                ! Correct F_n to prevent it drifting away from the symmetry of the system.
+                do ll=1,nptk
+                   F_n(:,ll,:)=transpose(matmul(symmetrizers(:,:,ll),transpose(F_n(:,ll,:))))
+                end do
+                call TConduct(energy,velocity,F_n,ThConductivity,ThConductivityMode)
+                do ll=1,nbands
+                   call symmetrize_tensor(ThConductivity(ll,:,:))
+                end do
+                write(2001,"(I9,"//trim(adjustl(aux))//"E20.10)") ii,ThConductivity
+                flush(2001)
+                write(2002,"(I9,9E20.10)") ii,sum(ThConductivity,dim=1)
+                flush(2002)
+                write(2003,"(I9,E20.10)") ii,&
+                     sum(sum(ThConductivity,dim=1),reshape((/((i==j,i=1,3),j=1,3)/),(/3,3/)))/3.
+                flush(2003)
+                relchange=twonorm3x3(sum(ThConductivity,dim=1)-kappa_old)/&
+                     twonorm3x3(kappa_old)
+                write(*,*) "Info: Iteration",ii
+                write(*,*) "Info:","Relative change","=",relchange
+           endif
+           call MPI_BCAST(relchange,1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+           if(relchange.lt.eps)exit
+        end do
+        if (myid.eq.0) then
+        write(403,"(F7.1,9E14.5,I6)") T,sum(ThConductivity,dim=1),ii
+        flush(403)
+        endif
+     end if
+     if (myid.eq.0) then
         close(2001)
         close(2002)
         close(2003)
