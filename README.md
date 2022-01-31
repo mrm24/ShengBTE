@@ -6,6 +6,7 @@
 - Jesús Carrete Montaña <jcarrete@gmail.com>
 - Nebil A. Katcho <nebil.katcho@gmail.com>
 - Natalio Mingo <natalio.mingo@cea.fr>
+- Fanchen Meng <fanchem@g.clemson.edu>
 
 ## How to download, compile and use `ShengBTE`
 

@@ -3,6 +3,7 @@
 !  Copyright (C) 2012-2022 Jesús Carrete Montaña <jcarrete@gmail.com>
 !  Copyright (C) 2012-2022 Nebil Ayape Katcho <nebil.ayapekatcho@cea.fr>
 !  Copyright (C) 2012-2022 Natalio Mingo Bisquert <natalio.mingo@cea.fr>
+!  Copyright (C) 2021-2022 Fanchen Meng <fanchem@g.clemson.edu>
 !
 !  This program is free software: you can redistribute it and/or modify
 !  it under the terms of the GNU General Public License as published by
