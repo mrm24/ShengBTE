@@ -69,7 +69,7 @@ program ShengBTE
   real(kind=8),allocatable :: Pspace_plus_total(:,:), Pspace_plus_total_reduce(:,:)
   real(kind=8),allocatable :: Pspace_minus_total(:,:), Pspace_minus_total_reduce(:,:)
   real(kind=8),allocatable :: ffunc(:,:),radnw_range(:),v_or(:,:),F_or(:,:)
-  real(kind=8),allocatable :: kappa_or(:),kappa_wires(:,:),kappa_wires_reduce(:,:)
+  real(kind=8),allocatable :: kappa_or(:),kappa_wires(:,:)
 
   integer(kind=4) :: iorient,ierr
   character(len=4) :: aux,aux2
@@ -101,7 +101,6 @@ program ShengBTE
   allocate(ThConductivity(nbands,3,3))
   allocate(ThConductivityMode(nptk,nbands,3,3))
   allocate(kappa_wires(nbands,nwires))
-  allocate(kappa_wires_reduce(nbands,nwires))
   allocate(Nequi(nptk))
   allocate(List(nptk))
   allocate(AllEquiList(nsymm_rot,nptk))
@@ -118,7 +117,7 @@ program ShengBTE
   call wedge(Nlist,Nequi,List,ALLEquiList,TypeofSymmetry)
   do ll=1,Nlist
      do kk=1,Nequi(ll)
-        eqclasses(ALLEquiList(kk,ll))=ll !List(ll)
+        eqclasses(ALLEquiList(kk,ll))=ll
      end do
   end do
 
@@ -628,7 +627,7 @@ program ShengBTE
         write(303,"(F7.1,9E14.5)") T,sum(ThConductivity,dim=1)
         flush(303)
      endif
-     ! paralleled iteration
+     ! parallel iteration
      ! Iterate to convergence if desired.
      if(convergence) then
         do ii=1,maxiter
@@ -767,7 +766,6 @@ program ShengBTE
      ! relaxation times.
      if(nanowires) then
         kappa_wires=0.d00
-        kappa_wires_reduce=0.d00
         kk=ceiling(float(nwires)/numprocs)
         do iorient=1,norientations
            if(myid.eq.0) then
@@ -781,7 +779,7 @@ program ShengBTE
                  F_or(jj,ii)=dot_product(F_n_0(jj,ii,:),uorientations(:,iorient))
               end do
            end do
-           do mm=myid+1,nwires,numprocs
+           do mm=1,nwires
               radnw=radnw_range(mm)
               call ScalingOfTau(Nlist,Nequi,ALLEquiList,v_or,velocity,tau_zero,radnw,ffunc)
               do ii=1,nptk
@@ -792,25 +790,25 @@ program ShengBTE
               call TConductScalar(energy,v_or,F_n_aux,kappa_or)
               if(convergence) then
                  do ii=1,maxiter
-                    kappa_or_old=sum(kappa_or)
                     call iteration_scalar(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,&
-                         Ntotal_plus,Ntotal_minus,Indof2ndPhonon_plus,Indof3rdPhonon_plus,&
-                         Indof2ndPhonon_minus,Indof3rdPhonon_minus,energy,v_or,&
+                         Ntotal_plus,Ntotal_minus,energy,v_or,&
                          Gamma_plus,Gamma_minus,tau_zero,F_n_aux)
-                    do ll=1,nptk
-                       do jj=1,nbands
-                          F_n_aux(jj,ll)=F_n_aux(jj,ll)*ffunc(ll,jj)
-                       end do
-                    end do
-                    call TConductScalar(energy,v_or,F_n_aux,kappa_or)
-                    relchange=abs((sum(kappa_or)-kappa_or_old)/kappa_or_old)
+                    if (myid .eq. 0) then
+                        kappa_or_old=sum(kappa_or)
+                        do ll=1,nptk
+                           do jj=1,nbands
+                              F_n_aux(jj,ll)=F_n_aux(jj,ll)*ffunc(ll,jj)
+                           end do
+                        end do
+                        call TConductScalar(energy,v_or,F_n_aux,kappa_or)
+                        relchange=abs((sum(kappa_or)-kappa_or_old)/kappa_or_old)
+                    endif
+                    call MPI_BCAST(relchange,1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr) 
                     if(relchange.lt.eps)exit
                  end do
               end if
-              kappa_wires_reduce(:,mm)=kappa_or
+              kappa_wires(:,mm)=kappa_or
            end do
-           call MPI_ALLREDUCE(kappa_wires_reduce,kappa_wires,Nbands*Nwires,&
-                MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,ierr)
            if(myid.eq.0) then
               write(aux,"(I0)") 3*nbands
               open(3001,file="BTE.kappa_nw_"//trim(adjustl(sorientation)),status="replace")

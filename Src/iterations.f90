@@ -57,11 +57,9 @@ contains
     include 'mpif.h'
     integer(kind=4),intent(in) :: Nlist,Nequi(Nlist),ALLEquiList(Nsymm_rot,nptk)
     integer(kind=4),intent(in) :: TypeofSymmetry(Nsymm_rot,nptk)
-    integer(kind=4),intent(in) :: N_plus(Nlist*Nbands),N_minus(Nlist*Nbands) !,Ntotal_plus,Ntotal_minus
-!    integer(kind=4),intent(in) :: Indof2ndPhonon_plus(Ntotal_plus),Indof3rdPhonon_plus(Ntotal_plus)
-!    integer(kind=4),intent(in) :: Indof2ndPhonon_minus(Ntotal_minus),Indof3rdPhonon_minus(Ntotal_minus)
+    integer(kind=4),intent(in) :: N_plus(Nlist*Nbands),N_minus(Nlist*Nbands)
     real(kind=8),intent(in) :: omega(nptk,nbands),velocity(nptk,nbands,3)
-    real(kind=8),intent(in) :: tau_zero(nbands,nlist) !Gamma_plus(Ntotal_plus),Gamma_minus(Ntotal_minus)
+    real(kind=8),intent(in) :: tau_zero(nbands,nlist)
     real(kind=8),intent(inout) :: F_n(Nbands,nptk,3)
 
     integer(kind=4) :: ID_equi(Nsymm_rot,nptk),Naccum_plus,Naccum_minus
@@ -129,62 +127,76 @@ contains
   ! Restricted variation of the above subroutine, limited to cases where kappa
   ! is an scalar. Used in the nanowire calculation.
   subroutine iteration_scalar(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,Ntotal_plus,&
-       Ntotal_minus,Indof2ndPhonon_plus,Indof3rdPhonon_plus,Indof2ndPhonon_minus,&
-       Indof3rdPhonon_minus,omega,velocity,Gamma_plus,Gamma_minus,tau_zero,F_n)
+       Ntotal_minus,omega,velocity,Gamma_plus,Gamma_minus,tau_zero,F_n)
     implicit none
+    include 'mpif.h'
 
     integer(kind=4),intent(in) :: Nlist,Nequi(Nlist),ALLEquiList(Nsymm_rot,nptk)
     integer(kind=4),intent(in) :: TypeofSymmetry(Nsymm_rot,nptk)
     integer(kind=4),intent(in) :: N_plus(Nlist*Nbands),N_minus(Nlist*Nbands),Ntotal_plus,Ntotal_minus
-    integer(kind=4),intent(in) :: Indof2ndPhonon_plus(Ntotal_plus),Indof3rdPhonon_plus(Ntotal_plus)
-    integer(kind=4),intent(in) :: Indof2ndPhonon_minus(Ntotal_minus),Indof3rdPhonon_minus(Ntotal_minus)
     real(kind=8),intent(in) :: omega(nptk,nbands),velocity(nptk,nbands)
     real(kind=8),intent(in) :: Gamma_plus(Ntotal_plus),Gamma_minus(Ntotal_minus),tau_zero(nbands,nlist)
     real(kind=8),intent(inout) :: F_n(Nbands,nptk)
 
     integer(kind=4) :: ID_equi(Nsymm_Rot,nptk),Naccum_plus,Naccum_minus
-    integer(kind=4) :: i,j,k,jj,kk,ll,mm,nn
-    real(kind=8) :: DeltaF(Nbands,nptk)
+    integer(kind=4) :: i,j,k,jj,kk,ll,mm,nn,mmm,nnn
+    real(kind=8) :: DeltaF(Nbands,nptk), DeltaF_reduce(Nbands,nptk)
 
     DeltaF=0.d0
+    DeltaF_reduce=0.d0
     call symmetry_map(ID_equi)
-    DeltaF=0.d0
-    do ll=1,Nlist
-       do i=1,Nbands
-          if (((ll-1)*Nbands+i).eq.1) then
-             Naccum_plus=0
-             Naccum_minus=0
-          else
-             Naccum_plus=Naccum_plus+N_plus((ll-1)*Nbands+i-1)
-             Naccum_minus=Naccum_minus+N_minus((ll-1)*Nbands+i-1)
-          end if
-          do kk=1,Nequi(ll)
-             if ((N_plus((ll-1)*Nbands+i).ne.0)) then
-                do jj=1,N_plus((ll-1)*Nbands+i)
-                   j=modulo(Indof2ndPhonon_plus(Naccum_plus+jj)-1,Nbands)+1
-                   mm=int((Indof2ndPhonon_plus(Naccum_plus+jj)-1)/Nbands)+1
-                   k=modulo(Indof3rdPhonon_plus(Naccum_plus+jj)-1,Nbands)+1
-                   nn=int((Indof3rdPhonon_plus(Naccum_plus+jj)-1)/Nbands)+1
-                   DeltaF(i,ALLEquiList(kk,ll))=DeltaF(i,ALLEquiList(kk,ll))+&
+
+    do nnn=1,nstates
+        mmm=myid*nstates+nnn
+        i=modulo(mmm-1,Nbands)+1
+        ll=int((mmm-1)/Nbands)+1
+
+        if (mmm.gt.nlist*nbands) cycle
+        if (nnn.eq.1) then
+            Naccum_plus=0
+            Naccum_minus=0
+        else
+            Naccum_plus=Naccum_plus+N_plus(mmm-1)
+            Naccum_minus=Naccum_minus+N_minus(mmm-1)
+        end if
+
+        do kk=1,Nequi(ll)
+           if ((N_plus(mmm).ne.0)) then
+              do jj=1,N_plus(mmm) 
+                  j=modulo(Indof2ndPhonon_plus(Naccum_plus+jj)-1,Nbands)+1
+                  mm=int((Indof2ndPhonon_plus(Naccum_plus+jj)-1)/Nbands)+1
+                  k=modulo(Indof3rdPhonon_plus(Naccum_plus+jj)-1,Nbands)+1
+                  nn=int((Indof3rdPhonon_plus(Naccum_plus+jj)-1)/Nbands)+1
+                  DeltaF_reduce(i,ALLEquiList(kk,ll))=DeltaF_reduce(i,ALLEquiList(kk,ll))+&
                         Gamma_plus(Naccum_plus+jj)*(F_n(k,ID_equi(TypeofSymmetry(kk,ll),nn))-&
                         F_n(j,ID_equi(TypeofSymmetry(kk,ll),mm)))
-                end do !jj
-             end if
-             if ((N_minus((ll-1)*Nbands+i).ne.0)) then
-                do jj=1,N_minus((ll-1)*Nbands+i)
-                   j=modulo(Indof2ndPhonon_minus(Naccum_minus+jj)-1,Nbands)+1
-                   mm=int((Indof2ndPhonon_minus(Naccum_minus+jj)-1)/Nbands)+1
-                   k=modulo(Indof3rdPhonon_minus(Naccum_minus+jj)-1,Nbands)+1
-                   nn=int((Indof3rdPhonon_minus(Naccum_minus+jj)-1)/Nbands)+1
-                   DeltaF(i,ALLEquiList(kk,ll))=DeltaF(i,ALLEquiList(kk,ll))+&
+              end do !jj
+           end if
+           if ((N_minus(mmm).ne.0)) then
+               do jj=1,N_minus(mmm)
+                  j=modulo(Indof2ndPhonon_minus(Naccum_minus+jj)-1,Nbands)+1
+                  mm=int((Indof2ndPhonon_minus(Naccum_minus+jj)-1)/Nbands)+1
+                  k=modulo(Indof3rdPhonon_minus(Naccum_minus+jj)-1,Nbands)+1
+                  nn=int((Indof3rdPhonon_minus(Naccum_minus+jj)-1)/Nbands)+1
+                  DeltaF_reduce(i,ALLEquiList(kk,ll))=DeltaF_reduce(i,ALLEquiList(kk,ll))+&
                         Gamma_minus(Naccum_minus+jj)*(F_n(k,ID_equi(TypeofSymmetry(kk,ll),nn))+&
                         F_n(j,ID_equi(TypeofSymmetry(kk,ll),mm)))*5.D-1
-                end do !jj
-             end if
+               end do !jj
+           end if
+        end do !kk
+    end do ! nnn
+
+    call MPI_BARRIER(MPI_COMM_WORLD,mmm)
+    call MPI_ALLREDUCE(DeltaF_reduce,DeltaF,nptk*nbands,MPI_DOUBLE_PRECISION,&
+         MPI_SUM,MPI_COMM_WORLD,mm)
+
+    do ll=1,Nlist
+       do i=1,Nbands
+          do kk=1,Nequi(ll)
              F_n(i,ALLEquiList(kk,ll))=tau_zero(i,ll)*velocity(ALLEquiList(kk,ll),i)*&
                   omega(ALLEquiList(kk,ll),i)+tau_zero(i,ll)*DeltaF(i,ALLEquiList(kk,ll))
-          end do !kk
-       end do
-    end do
+          enddo
+       enddo
+    enddo   
   end subroutine iteration_scalar
 end module iterations

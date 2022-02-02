@@ -426,18 +426,19 @@ contains
   function base_sigma(v)
     implicit none
     real(kind=8),intent(in) :: v(3)
- 
+
     real(kind=8) :: base_sigma
- 
+
     integer(kind=4) :: nu
- 
+
     base_sigma=0.
     do nu=1,3
        base_sigma=base_sigma+(dot_product(rlattvec(:,nu),v)/ngrid(nu))**2
     end do
- 
+
     base_sigma=sqrt(base_sigma/6.)
- end function base_sigma
+  end function base_sigma
+
   
   ! Force a real 3x3 Cartesian tensor to fulfill all the symmetries.
   subroutine symmetrize_tensor(tensor)
