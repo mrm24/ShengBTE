@@ -22,6 +22,7 @@
 module input
   use iso_fortran_env
   use config
+  use mpi_f08
   implicit none
 
   ! The file names are defined here and can be changed for custom builds.
@@ -35,8 +36,6 @@ contains
   ! Read FORCE_CONSTANTS_2ND.
   subroutine read2fc(fc)
     implicit none
-
-    include "mpif.h"
 
     real(kind=8),allocatable,intent(out) :: fc(:,:,:,:,:,:,:)
     

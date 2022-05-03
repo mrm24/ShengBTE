@@ -32,9 +32,8 @@ program ShengBTE
   use dos_routines
   use gruneisen
   use integrals
+  use mpi_f08
   implicit none
-
-  include "mpif.h"
 
   real(kind=8) :: kappa_sg(3,3),kappa_old(3,3),relchange
   integer(kind=4) :: i,j,ii,jj,kk,ll,mm,nn

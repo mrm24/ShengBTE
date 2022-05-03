@@ -24,6 +24,7 @@ module wedgetc
   use symmetry
   use config
   use misc
+  use mpi_f08
   implicit none
 
 contains
@@ -39,8 +40,6 @@ contains
   ! and finally the G3 component.
   subroutine wedge(Nlist,Nequi,List,ALLEquiList,TypeofSymmetry)
     implicit none
-
-    include "mpif.h"
 
     integer(kind=4),intent(out) :: Nlist,Nequi(nptk),List(nptk)
     integer(kind=4),intent(out) :: ALLEquiList(Nsymm_rot,nptk),TypeofSymmetry(Nsymm_rot,nptk)

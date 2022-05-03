@@ -26,6 +26,7 @@ module processes
   use misc
   use data
   use config
+  use mpi_f08
   implicit none
 
   real(kind=8),parameter :: hbarp=hbar*1e22
@@ -35,7 +36,6 @@ contains
        Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,IJK, maxsize)
 
     implicit none
-    include "mpif.h"
 
     integer(kind=4),intent(in) :: NList,List(Nlist),IJK(3,nptk),Ntri ,maxsize
     integer(kind=4),intent(in) :: Index_i(Ntri),Index_j(Ntri),Index_k(Ntri)
@@ -253,8 +253,6 @@ contains
        Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,&
        rate_scatt_plus,rate_scatt_minus,WP3_plus,WP3_minus)
     implicit none
-
-    include "mpif.h"
 
     real(kind=8),intent(in) :: energy(nptk,nbands)
     real(kind=8),intent(in) :: velocity(nptk,nbands,3)
@@ -495,8 +493,6 @@ contains
        N_plus,Pspace_plus_total,N_minus,Pspace_minus_total)
     implicit none
 
-    include "mpif.h"
-
     real(kind=8),intent(in) :: energy(nptk,nbands)
     real(kind=8),intent(in) :: velocity(nptk,nbands,3)
     integer(kind=4),intent(in) :: NList
@@ -700,8 +696,6 @@ contains
   subroutine RTA_driver(energy,velocity,eigenvect,Nlist,List,IJK,&
        Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,rate_scatt,rate_scatt_plus,rate_scatt_minus,WP3_plus,WP3_minus)
     implicit none
-
-    include "mpif.h"
 
     real(kind=8),intent(in) :: energy(nptk,nbands)
     real(kind=8),intent(in) :: velocity(nptk,nbands,3)

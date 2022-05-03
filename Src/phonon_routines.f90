@@ -24,6 +24,7 @@ module phonon_routines
   use data
   use config
   use input
+  use mpi_f08
   implicit none
 
 contains
@@ -31,8 +32,6 @@ contains
   ! Create the q-point grid and compute all relevant properties.
   subroutine eigenDM(omega,eigenvect,velocity)
     implicit none
-
-    include "mpif.h"
 
     real(kind=8),intent(out) :: omega(nptk,nbands),velocity(nptk,nbands,3)
     complex(kind=8),intent(out) :: eigenvect(nptk,Nbands,Nbands)

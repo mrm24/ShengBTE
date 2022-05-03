@@ -24,6 +24,7 @@ module iterations
   use data
   use config
   use wedgetc
+  use mpi_f08
   implicit none
 
 contains
@@ -54,7 +55,6 @@ contains
   subroutine iteration(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,&
                        omega,velocity,tau_zero,F_n)
     implicit none
-    include 'mpif.h'
     integer(kind=4),intent(in) :: Nlist,Nequi(Nlist),ALLEquiList(Nsymm_rot,nptk)
     integer(kind=4),intent(in) :: TypeofSymmetry(Nsymm_rot,nptk)
     integer(kind=4),intent(in) :: N_plus(Nlist*Nbands),N_minus(Nlist*Nbands)
@@ -129,7 +129,6 @@ contains
   subroutine iteration_scalar(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,Ntotal_plus,&
        Ntotal_minus,omega,velocity,Gamma_plus,Gamma_minus,tau_zero,F_n)
     implicit none
-    include 'mpif.h'
 
     integer(kind=4),intent(in) :: Nlist,Nequi(Nlist),ALLEquiList(Nsymm_rot,nptk)
     integer(kind=4),intent(in) :: TypeofSymmetry(Nsymm_rot,nptk)

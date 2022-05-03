@@ -24,6 +24,7 @@ module config
   use misc
   use data
   use symmetry
+  use mpi_f08
   implicit none
 
   integer(kind=4) :: nelements,natoms,ngrid(3),norientations
@@ -69,8 +70,6 @@ contains
 
   subroutine read_config()
     implicit none
-
-    include "mpif.h"
 
     integer(kind=4) :: i,j,k,ii,jj,kk,ll,info,ierr
     integer(kind=4) :: P(3)
