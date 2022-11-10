@@ -40,6 +40,9 @@ contains
 
     ThConductivity=0.d0
     ThConductivityMode=0.d0
+    !$OMP PARALLEL DO default(none) collapse(2) schedule(static) &
+    !$OMP & shared(nptk,nbands,omega,velocity,F_n,ThConductivityMode,T) &
+    !$OMP & private(jj,ii,dir1,dir2,tmp,fBE) reduction(+:ThConductivity)
     do jj=1,Nbands
        do ii=2,nptk
           do dir1=1,3
@@ -52,6 +55,7 @@ contains
           ThConductivity(jj,:,:)=ThConductivity(jj,:,:)+ThConductivityMode(ii,jj,:,:)
        end do
     end do
+    !$OMP END PARALLEL DO
     ThConductivity=1e21*hbar**2*ThConductivity/(kB*T*T*V*nptk)
     ThConductivityMode=1e21*hbar**2*ThConductivityMode/(kB*T*T*V*nptk)
   end subroutine TConduct
@@ -68,6 +72,9 @@ contains
     integer(kind=4) :: ii,jj
 
     ThConductivity=0.d0
+    !$OMP PARALLEL DO default(none) collapse(2) schedule(static) &
+    !$OMP & shared(nptk,nbands,omega,velocity,F_n,T) &
+    !$OMP & private(jj,ii,fBE) reduction(+:ThConductivity)
     do jj=1,Nbands
        do ii=2,nptk
           fBE=1.d0/(exp(hbar*omega(ii,jj)/Kb/T)-1.D0)
@@ -75,6 +82,7 @@ contains
                velocity(ii,jj)*F_n(jj,ii)
        end do
     end do
+    !$OMP END PARALLEL DO
     ThConductivity=1e21*hbar**2*ThConductivity/(kB*T*T*V*nptk)
   end subroutine TConductScalar
 
@@ -97,6 +105,9 @@ contains
     end do
 
     results=0.
+    !$OMP PARALLEL DO default(none) collapse(2) schedule(static) &
+    !$OMP & shared(nptk,nbands,nticks,omega,velocity,F_n,T,ticks) &
+    !$OMP & private(jj,ii,kk,dir1,dir2,tmp,fBE,lambda) reduction(+:results)
     do jj=1,Nbands
        do ii=2,nptk
           do dir1=1,3
@@ -115,6 +126,7 @@ contains
           end do
        end do
     end do
+    !$OMP END PARALLEL DO
     results=1e21*hbar**2*results/(kB*T*T*V*nptk)
   end subroutine CumulativeTConduct
 
@@ -147,6 +159,9 @@ contains
     end do
 
     results=0.
+    !$OMP PARALLEL DO default(none) collapse(2) schedule(static) &
+    !$OMP & shared(nptk,nbands,nticks,omega,velocity,F_n,T,ticks) &
+    !$OMP & private(jj,ii,kk,dir1,dir2,tmp,fBE,lambda) reduction(+:results)
     do jj=1,Nbands
        do ii=2,nptk
           do dir1=1,3
@@ -164,6 +179,7 @@ contains
           end do
        end do
     end do
+    !$OMP END PARALLEL DO
     results=1e21*hbar**2*results/(kB*T*T*V*nptk)
   end subroutine CumulativeTConductOmega
 end module conductivity

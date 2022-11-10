@@ -36,18 +36,21 @@ contains
     integer(kind=4) :: ii,jj
     real(kind=8) :: cv,dBE,x
 
-    cv=0.
+    cv=0.0d0
+    !$OMP PARALLEL DO default(none) schedule(static) collapse(2) &
+    !$OMP & shared(omega,T,nbands,nptk) private(x,dBE,ii,jj) reduction(+:cv)
     do jj=1,nbands
        do ii=1,nptk
-          x=hbar*omega(ii,jj)/(2.*kB*T)
+          x=hbar*omega(ii,jj)/(2.0d0*kB*T)
           if(x.eq.0.) then
-             dBE=1.
+             dBE=1.0d0
           else
              dBE=(x/sinh(x))**2.
           end if
           cv=cv+dBE
        end do
     end do
+    !$OMP END PARALLEL DO
     cv=kB*cv/(1e-27*V*nptk) ! J/(K m^3)
   end function cv
 
@@ -64,10 +67,13 @@ contains
     real(kind=8) :: dnrm2
 
     nruter=0.
+    !$OMP PARALLEL DO default(none) schedule(static) collapse(2)  &
+    !$OMP & shared(omega,velocity,T,nbands,nptk) private(x,dBE,tmp,ii,jj,dir1,dir2) &
+    !$OMP & reduction(+:nruter)
     do jj=1,nbands
        do ii=2,nptk
-          x=hbar*omega(ii,jj)/(2.*kB*T)
-          dBE=(x/sinh(x))**2.
+          x=hbar*omega(ii,jj)/(2.0d0*kB*T)
+          dBE=(x/sinh(x))**2.0d0
           tmp=dnrm2(3,velocity(ii,jj,:),1)
           if(tmp.lt.1d-12) then
              cycle
@@ -82,6 +88,7 @@ contains
           end do
        end do
     end do
+    !$OMP END PARALLEL DO
     nruter=1e21*kB*nruter/(nptk*V)
   end subroutine kappasg
 end module integrals

@@ -46,7 +46,7 @@ contains
     integer(kind=4) :: q(3),qprime(3),qdprime(3),i,j,k
     integer(kind=4) :: Index_N(0:(Ngrid(1)-1),0:(Ngrid(2)-1),0:(Ngrid(3)-1))
 
-    integer(kind=4) :: ii,jj,kk,ll,ss,mm
+    integer(kind=4) :: ii,jj,kk,ll,ss,mm, step
     integer(kind=4) :: N_plus_count, N_minus_count
     real(kind=8) :: sigma
     real(kind=8) :: omega,omegap,omegadp
@@ -73,8 +73,17 @@ contains
     Vp_minus_matrix = (0.d0, 0.d0)
 
     call MPI_BARRIER(MPI_COMM_WORLD,mm)
- 
-    do mm=myid+1,Nbands*NList,numprocs
+
+    !$OMP parallel default(none) shared(mm,myid,numprocs,ngrid,nlist,Nbands,nptk,IJK,rlattvec) &
+    !$OMP & shared(energy,velocity,scalebroad,Vp_minus_matrix_reduce,Vp_plus_matrix_reduce,list) &
+    !$OMP & shared(Index_N,Index_i,Index_j,Index_k,Phi,R_k,R_j,Ntri,eigenvect) &
+    !$OMP & private(i,j,k,ii,jj,kk,ll,q,qprime,qdprime,realqprime,realqdprime,omega,omegap,omegadp) &
+    !$OMP & private(ss,sigma,N_plus_count,N_minus_count,step)
+
+    step = numprocs
+
+    !$OMP DO schedule(dynamic,1)
+    do mm=myid+1,Nbands*NList,step
        N_plus_count = 0
        N_minus_count = 0
          i=modulo(mm-1,Nbands)+1
@@ -130,7 +139,11 @@ contains
                end do ! ii
             end do  ! j
          end if
-       end do ! mm
+    end do ! mm
+    !$OMP END DO
+
+    !$OMP END PARALLEL
+
     ! always good to have a bar before allreduce
     call MPI_BARRIER(MPI_COMM_WORLD,ll)
 
@@ -139,7 +152,7 @@ contains
     call MPI_ALLREDUCE(Vp_minus_matrix_reduce,Vp_minus_matrix,Nbands*NList*maxsize,&
          MPI_DOUBLE_COMPLEX,MPI_SUM,MPI_COMM_WORLD,ll)
     deallocate(Vp_plus_matrix_reduce, Vp_minus_matrix_reduce)
-   end subroutine calculate_Vp
+  end subroutine calculate_Vp
 
   ! Compute one of the matrix elements involved in the calculation of Ind_plus.
   function Vp_plus(i,j,k,q,qprime,qdprime,realqprime,realqdprime,eigenvect,&
@@ -302,8 +315,7 @@ contains
     omega=energy(list(ll),i)
     ! Loop over all processes, detecting those that are allowed and
     ! computing their amplitudes.
-    if(omega.ne.0) then
-       do j=1,Nbands
+    do j=1,Nbands
           do ii=1,nptk
              qprime=IJK(:,ii)
              realqprime=matmul(rlattvec,qprime/dble(ngrid))
@@ -367,10 +379,9 @@ contains
                 !--------END emission process---------------!
              end do ! k
           end do ! ii
-       end do  ! j
-       WP3_plus=WP3_plus/nptk
-       WP3_minus=WP3_minus*5.d-1/nptk
-    end if
+    end do  ! j
+    WP3_plus=WP3_plus/nptk
+    WP3_minus=WP3_minus*5.d-1/nptk
   end subroutine Ind_driver
 
   ! Compute the number of allowed absorption processes and their contribution
@@ -518,6 +529,10 @@ contains
     N_plus_reduce=0
     N_minus_reduce=0
 
+    !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(nbands,nlist,numprocs,myid,omega_max) &
+    !$OMP & shared(energy,velocity,List,IJK) &
+    !$OMP & shared(N_plus_reduce,Pspace_plus_reduce,N_minus_reduce,Pspace_minus_reduce) &
+    !$OMP & private(mm)
     do mm=myid+1,Nbands*Nlist,numprocs
        if (energy(List(int((mm-1)/Nbands)+1),modulo(mm-1,Nbands)+1).le.omega_max) then
           call NP_plus(mm,energy,velocity,Nlist,List,IJK,&
@@ -526,6 +541,7 @@ contains
                N_minus_reduce(mm),Pspace_minus_reduce(mm))
        endif
     end do
+    !$OMP END PARALLEL DO
 
     call MPI_ALLREDUCE(N_plus_reduce,N_plus,Nbands*Nlist,MPI_INTEGER,&
          MPI_SUM,MPI_COMM_WORLD,mm)
@@ -730,6 +746,10 @@ contains
     WP3_plus_reduce=0.d00
     WP3_minus_reduce=0.d00
 
+    !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(Nbands,NList,myid,numprocs,Ntri) &
+    !$OMP & shared(energy,velocity,eigenvect,List,IJK,Phi,R_j,R_k,Index_i,Index_j,Index_k,omega_max) &
+    !$OMP & shared(WP3_plus_reduce,WP3_minus_reduce,rate_scatt_plus_reduce,rate_scatt_minus_reduce) &
+    !$OMP & private(mm,i,ll,Gamma_plus,Gamma_minus)
     do mm=myid+1,Nbands*NList,numprocs
        i=modulo(mm-1,Nbands)+1
        ll=int((mm-1)/Nbands)+1
@@ -744,6 +764,7 @@ contains
           rate_scatt_minus_reduce(i,ll)=Gamma_minus*5.D-1
        endif
     end do
+    !$OMP END PARALLEL DO
 
     call MPI_ALLREDUCE(rate_scatt_plus_reduce,rate_scatt_plus,Nbands*Nlist,&
          MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,mm)

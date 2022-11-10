@@ -51,6 +51,9 @@ contains
     end do
 
     ffunc=0.d0
+    !$OMP PARALLEL DO default(none) collapse(2) schedule(static) &
+    !$OMP & shared(nptk,nbands,T,tauzero,ffunc,radnw,cgrid,velocity,velocity_z) &
+    !$OMP & private(jj,ii,vrho,vmod,tauint,vaxial,xsum)
     do ii=1,nptk
        do jj=1,Nbands
           vmod=dnrm2(3,velocity(ii,jj,:),1)
@@ -71,5 +74,6 @@ contains
           end if
        end do
     end do
+    !$OMP END PARALLEL DO
   end subroutine ScalingOfTau
 end module scaling

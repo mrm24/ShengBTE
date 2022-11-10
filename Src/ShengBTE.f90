@@ -33,6 +33,8 @@ program ShengBTE
   use gruneisen
   use integrals
   use mpi_f08
+  !$ use omp_lib
+  !$ use omp_lib_kinds
   implicit none
 
   real(kind=8) :: kappa_sg(3,3),kappa_old(3,3),relchange
@@ -62,7 +64,7 @@ program ShengBTE
   integer(kind=4) :: nlist,Ntotal_plus,Ntotal_minus
   integer(kind=4),allocatable :: nequi(:),list(:)
   integer(kind=4),allocatable :: AllEquiList(:,:),TypeofSymmetry(:,:),eqclasses(:)
-  integer(kind=4),allocatable :: N_plus(:),N_minus(:)
+  integer(kind=4),allocatable :: N_plus(:),N_minus(:),Naccum_plus_array(:),Naccum_minus_array(:)
   integer(kind=4) :: Naccum_plus, Naccum_minus
   real(kind=8) :: radnw,kappa_or_old
   real(kind=8),allocatable :: Pspace_plus_total(:,:), Pspace_plus_total_reduce(:,:)
@@ -74,6 +76,7 @@ program ShengBTE
   character(len=4) :: aux,aux2
   character(len=1024) :: path
   character(len=128) :: sorientation
+  integer(kind=4) :: max_nthreads
 
   real(kind=8) :: dnrm2
 
@@ -86,6 +89,26 @@ program ShengBTE
   ! Pearson deviation coefficients related to isotopic disorder and so
   ! on and so forth.
   call read_config()
+
+  !$ max_nthreads = omp_get_max_threads()
+  !$ if (max_nthreads < nthreads) then
+  !$   if (myid.eq.0) then
+  !$      write(*,'(2(A,I0),A)') " Info: Number of threads requested (", nthreads, &
+  !$                 &") larger than system value of OMP_NUM_THREADS (",max_nthreads,")"
+  !$      write(*,*) "Info: OMP_NUM_THREADS has overriden requested number of threads"
+  !$   end if
+  !$   nthreads = max_nthreads
+  !$ end if
+  !$ ! if negative value passed for nthreads default to OMP_NUM_THREADS
+  !$ if (nthreads > 0) then
+  !$    call omp_set_num_threads(nthreads)
+  !$ else
+  !$    nthreads = max_nthreads
+  !$ end if
+
+  if(myid.eq.0) then
+     write(*,'(A,I0,A)') " Info: Each MPI process will use ", nthreads," thread(s)"
+  end if
 
   allocate(energy(nptk,nbands))
   allocate(eigenvect(nptk,nbands,nbands))
@@ -228,11 +251,17 @@ program ShengBTE
   ! Compute the normalized boundary scattering rates.
   allocate(tau_b(Nbands,Nlist))
   allocate(tau_b2(Nbands,nptk))
+  !$OMP PARALLEL default(none) private(ll,ii) &
+  !$OMP & shared(nlist,nbands,nptk,tau_b,tau_b2,velocity,list)
+
+  !$OMP DO collapse(2) schedule(static)
   do ll=1,Nlist
      do ii=1,Nbands
         tau_b(ii,ll)=1.d00/dnrm2(3,velocity(List(ll),ii,:),1)
      end do
   end do
+  !$OMP END DO
+  !$OMP DO collapse(2) schedule(static)
   do ll=1,nptk
      do ii=1,Nbands
         tau_b2(ii,ll)=1.d00/dnrm2(3,velocity(ll,ii,:),1)
@@ -248,6 +277,8 @@ program ShengBTE
      end do
      close(2)
   endif
+  !$OMP END DO
+  !$OMP END PARALLEL
   ! Locally adaptive estimates of the total and projected densities of states.
   allocate(ticks(nticks))
   allocate(dos(nticks))
@@ -455,11 +486,20 @@ program ShengBTE
   ! enough) we use optimized routines with a much smaller memory footprint.
   ! weighted phase space volume per mode .
   nstates=ceiling(float(nlist*nbands)/numprocs)
+  allocate(Naccum_plus_array(nstates))
+  allocate(Naccum_minus_array(nstates))
   Naccum_plus=0
   Naccum_minus=0
+  Naccum_plus_array = 0
+  Naccum_minus_array = 0
   do nn=1,nstates
       mm=myid*nstates+nn
       if (mm.gt.nlist*nbands) cycle
+      ! keep track of how many processes are required in the for the states 1->(nn-1)
+      ! to allow accurate array accessing across MPI processes and threads
+      Naccum_plus_array(nn) = Naccum_plus
+      Naccum_minus_array(nn) = Naccum_minus
+
       Naccum_plus=Naccum_plus+N_plus(mm)
       Naccum_minus=Naccum_minus+N_minus(mm)
   enddo
@@ -507,26 +547,30 @@ program ShengBTE
      Pspace_minus_total_reduce=0.d0
 
      if(convergence) then
+        !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(nstates,myid,Nbands,nlist) &
+        !$OMP & shared(energy,velocity,eigenvect,IJK,list,Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k) &
+        !$OMP & shared(N_plus,Naccum_plus_array,Gamma_plus,rate_scatt_plus_reduce,Pspace_plus_total_reduce) &
+        !$OMP & shared(N_minus,Naccum_minus_array,Gamma_minus,rate_scatt_minus_reduce,Pspace_minus_total_reduce) &
+        !$OMP & private(i,ll,mm,nn,Naccum_plus,Naccum_minus)
         do nn=1,nstates
             mm=myid*nstates+nn
             i=modulo(mm-1,Nbands)+1
             ll=int((mm-1)/Nbands)+1
 
             if (mm.gt.nlist*nbands) cycle
-            if (nn.eq.1) then
-                Naccum_plus=0
-                Naccum_minus=0
-            else
-                Naccum_plus=Naccum_plus+N_plus(mm-1)
-                Naccum_minus=Naccum_minus+N_minus(mm-1)
-            end if
-            call Ind_driver(mm,energy,velocity,eigenvect,Nlist,List,IJK,&
+
+            Naccum_plus=Naccum_plus_array(nn)
+            Naccum_minus=Naccum_minus_array(nn)
+
+            if (energy(list(ll),i) /= 0.d0) then
+              call Ind_driver(mm,energy,velocity,eigenvect,Nlist,List,IJK,&
                  N_plus,N_minus,Naccum_plus,Naccum_minus, &
                  Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,&
                  rate_scatt_plus_reduce(i,ll),rate_scatt_minus_reduce(i,ll),&
                  Pspace_plus_total_reduce(i,ll),Pspace_minus_total_reduce(i,ll))
-
+            end if
         enddo 
+        !$OMP END PARALLEL DO
         call MPI_BARRIER(MPI_COMM_WORLD,ierr)
         call MPI_ALLREDUCE(rate_scatt_plus_reduce,rate_scatt_plus,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
              MPI_SUM,MPI_COMM_WORLD,ll)
@@ -597,13 +641,16 @@ program ShengBTE
      end if
 
      tau_zero=0.d0
+     !$OMP PARALLEL DO default(none) collapse(2) schedule(static) &
+     !$OMP & shared(nlist,nbands,rate_scatt,tau_zero) private(ll,i)
      do ll = 1,Nlist
         do i=1,Nbands
            if(rate_scatt(i,ll).ne.0) then
-              tau_zero(i,ll)=1./rate_scatt(i,ll)
+              tau_zero(i,ll)=1.0d0/rate_scatt(i,ll)
            end if
         end do
      end do
+     !$OMP END PARALLEL DO
 
 
      ! Set up everything to start the iterative process.
@@ -615,9 +662,11 @@ program ShengBTE
         open(2002,file="BTE.kappa_tensor",status="replace")
         open(2003,file="BTE.kappa_scalar",status="replace")
         call TConduct(energy,velocity,F_n,ThConductivity,ThConductivityMode)
+        !$OMP PARALLEL DO default(none) schedule(static) private(ll) shared(nbands,ThConductivity)
         do ll=1,nbands
            call symmetrize_tensor(ThConductivity(ll,:,:))
         end do
+        !$OMP END PARALLEL DO
         write(aux,"(I0)") 9*Nbands
         write(2001,"(I9,"//trim(adjustl(aux))//"E20.10)") 0,ThConductivity
         write(2002,"(I9,9E20.10,E20.10)") 0,sum(ThConductivity,dim=1)
@@ -631,7 +680,7 @@ program ShengBTE
      if(convergence) then
         do ii=1,maxiter
            call iteration(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,&
-                energy,velocity,tau_zero,F_n)
+              & Naccum_plus_array,Naccum_minus_array,energy,velocity,tau_zero,F_n)
            if(myid.eq.0) then
                kappa_old=sum(ThConductivity,dim=1)
                 ! Correct F_n to prevent it drifting away from the symmetry of the system.
@@ -639,9 +688,11 @@ program ShengBTE
                    F_n(:,ll,:)=transpose(matmul(symmetrizers(:,:,ll),transpose(F_n(:,ll,:))))
                 end do
                 call TConduct(energy,velocity,F_n,ThConductivity,ThConductivityMode)
+                !$OMP PARALLEL DO default(none) schedule(static) private(ll) shared(nbands,ThConductivity)
                 do ll=1,nbands
                    call symmetrize_tensor(ThConductivity(ll,:,:))
                 end do
+                !$OMP END PARALLEL DO
                 write(2001,"(I9,"//trim(adjustl(aux))//"E20.10)") ii,ThConductivity
                 flush(2001)
                 write(2002,"(I9,9E20.10)") ii,sum(ThConductivity,dim=1)
@@ -668,12 +719,15 @@ program ShengBTE
         close(2003)
 
         ! Write out the converged scattering rates.
+        !$OMP PARALLEL DO default(none) collapse(2) schedule(static) &
+        !$OMP & shared(nlist,nbands,F_n,tau,velocity,energy,List) private(ll,ii)
         do ll=1,Nlist
            do ii=1,Nbands
               tau(ii,ll)=dot_product(F_n(ii,List(ll),:),velocity(List(ll),ii,:))/&
                    (dot_product(velocity(List(ll),ii,:),velocity(List(ll),ii,:))*energy(List(ll),ii))
            end do
         end do
+        !$OMP END PARALLEL DO
         write(aux,"(I0)") Nbands
         open(1,file="BTE.w_final",status="replace")
         do i=1,Nbands
@@ -682,12 +736,15 @@ program ShengBTE
            enddo
         end do
         close(1)
+        !$OMP PARALLEL DO default(none) collapse(2) schedule(static) &
+        !$OMP & shared(nptk,nbands,F_n,tau2,velocity,energy) private(ll,ii)
         do ll=1,nptk
            do ii=1,Nbands
               tau2(ii,ll)=dot_product(F_n(ii,ll,:),velocity(ll,ii,:))/&
                    (dot_product(velocity(ll,ii,:),velocity(ll,ii,:))*energy(ll,ii))
            end do
         end do
+        !$OMP END PARALLEL DO
         write(aux,"(I0)") Nbands
 
         ! If results for nanowires have been requested, obtain a lower bound
@@ -697,20 +754,26 @@ program ShengBTE
            do iorient=1,norientations
               write(sorientation,"(I128)") iorient
               open(3001,file="BTE.kappa_nw_"//trim(adjustl(sorientation))//"_lower",status="replace")
+              !$OMP PARALLEL DO default(none) schedule(static) collapse(2) &
+              !$OMP & private(ii,jj) shared(nbands,nptk,velocity,v_or,F_or,F_n_0,uorientations,iorient)
               do ii=1,nptk
                  do jj=1,Nbands
                     v_or(ii,jj)=dot_product(velocity(ii,jj,:),uorientations(:,iorient))
                     F_or(jj,ii)=dot_product(F_n_0(jj,ii,:),uorientations(:,iorient))
                  end do
               end do
+              !$OMP END PARALLEL DO
               do mm=1,Nwires
                  radnw=radnw_range(mm)
                  call ScalingOfTau(Nlist,Nequi,ALLEquiList,v_or,velocity,tau_zero,radnw,ffunc)
+                 !$OMP PARALLEL DO default(none) schedule(static) collapse(2) &
+                 !$OMP & private(ii,jj) shared(nbands,nptk,F_n_aux,F_or,ffunc)
                  do ii=1,nptk
                     do jj=1,Nbands
                        F_n_aux(jj,ii)=F_or(jj,ii)*ffunc(ii,jj)
                     end do
                  end do
+                 !$OMP END PARALLEL DO
                  call TConductScalar(energy,v_or,F_n_aux,kappa_or)
                  write(3001,"(E30.20,"//trim(adjustl(aux))//"E20.10,E20.10)") 2.d0*radnw,&
                       kappa_or,sum(kappa_or)
@@ -721,11 +784,14 @@ program ShengBTE
         allocate(ticks(nticks),cumulative_kappa(nbands,3,3,nticks))
         ! Cumulative thermal conductivity.
         call CumulativeTConduct(energy,velocity,F_n,ticks,cumulative_kappa)
+        !$OMP PARALLEL DO default(none) schedule(static) collapse(2) &
+        !$OMP & private(ii,ll) shared(nbands,nticks,cumulative_kappa)
         do ii=1,nticks
            do ll=1,nbands
               call symmetrize_tensor(cumulative_kappa(ll,:,:,ii))
            end do
         end do
+        !$OMP END PARALLEL DO
         write(aux,"(I0)") 9*nbands+1
         open(2002,file="BTE.cumulative_kappa_tensor",status="replace")
         open(2003,file="BTE.cumulative_kappa_scalar",status="replace")
@@ -743,11 +809,14 @@ program ShengBTE
         ! Cumulative thermal conductivity vs angular frequency.
         allocate(ticks(nticks),cumulative_kappa(nbands,3,3,nticks))
         call CumulativeTConductOmega(energy,velocity,F_n,ticks,cumulative_kappa)
+        !$OMP PARALLEL DO default(none) schedule(static) collapse(2) &
+        !$OMP & private(ii,ll) shared(nbands,nticks,cumulative_kappa)
         do ii=1,nticks
            do ll=1,nbands
               call symmetrize_tensor(cumulative_kappa(ll,:,:,ii))
            end do
         end do
+        !$OMP END PARALLEL DO
         write(aux,"(I0)") 9*nbands+1
         open(2002,file="BTE.cumulative_kappaVsOmega_tensor",status="replace")
         do ii=1,nticks
@@ -772,33 +841,42 @@ program ShengBTE
                    iorient,":",orientations(:,iorient)
            end if
            write(sorientation,"(I128)") iorient
+           !$OMP PARALLEL DO default(none) schedule(static) collapse(2) &
+           !$OMP & private(ii,jj) shared(nbands,nptk,velocity,v_or,F_or,F_n_0,uorientations,iorient)
            do ii=1,nptk
               do jj=1,Nbands
                  v_or(ii,jj)=dot_product(velocity(ii,jj,:),uorientations(:,iorient))
                  F_or(jj,ii)=dot_product(F_n_0(jj,ii,:),uorientations(:,iorient))
               end do
            end do
+           !$OMP END PARALLEL DO
            do mm=1,nwires
               radnw=radnw_range(mm)
               call ScalingOfTau(Nlist,Nequi,ALLEquiList,v_or,velocity,tau_zero,radnw,ffunc)
+              !$OMP PARALLEL DO default(none) schedule(static) collapse(2) &
+              !$OMP & private(ii,jj) shared(nbands,nptk,F_n_aux,F_or,ffunc)
               do ii=1,nptk
                  do jj=1,Nbands
                     F_n_aux(jj,ii)=F_or(jj,ii)*ffunc(ii,jj)
                  end do
               end do
+              !$OMP END PARALLEL DO
               call TConductScalar(energy,v_or,F_n_aux,kappa_or)
               if(convergence) then
                  do ii=1,maxiter
                     call iteration_scalar(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,&
-                         Ntotal_plus,Ntotal_minus,energy,v_or,&
-                         Gamma_plus,Gamma_minus,tau_zero,F_n_aux)
+                         & Ntotal_plus,Ntotal_minus,Naccum_plus_array,Naccum_minus_array, &
+                         & energy,v_or,Gamma_plus,Gamma_minus,tau_zero,F_n_aux)
                     if (myid .eq. 0) then
                         kappa_or_old=sum(kappa_or)
+                        !$OMP PARALLEL DO default(none) schedule(static) collapse(2) &
+                        !$OMP & private(ll,jj) shared(nbands,nptk,F_n_aux,ffunc)
                         do ll=1,nptk
                            do jj=1,nbands
                               F_n_aux(jj,ll)=F_n_aux(jj,ll)*ffunc(ll,jj)
                            end do
                         end do
+                        !$OMP END PARALLEL DO
                         call TConductScalar(energy,v_or,F_n_aux,kappa_or)
                         relchange=abs((sum(kappa_or)-kappa_or_old)/kappa_or_old)
                     endif

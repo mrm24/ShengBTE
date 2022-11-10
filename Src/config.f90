@@ -43,7 +43,7 @@ module config
            T_min,T_max,T_step,omega_max
   logical :: nonanalytic,convergence,isotopes,autoisotopes,nanowires,onlyharmonic,espresso
   namelist /flags/ nonanalytic,convergence,isotopes,autoisotopes,&
-       nanowires,onlyharmonic,espresso
+       nanowires,onlyharmonic,espresso,nthreads
 
   integer(kind=4) :: nbands,nptk,nwires
   real(kind=8) :: cgrid,V,rV,rlattvec(3,3),slattvec(3,3)
@@ -65,6 +65,9 @@ module config
   real(kind=8),allocatable :: Gamma_plus(:),Gamma_minus(:)
   ! MPI variables, assigned in ShengBTE.f90.
   integer(kind=4) :: myid,numprocs,nstates
+  ! Number of threads requested by user
+  ! Later overwritten to number of threads systems allows
+  integer(kind=4) :: nthreads
 
 contains
 
@@ -173,6 +176,7 @@ contains
     nanowires=.false.
     onlyharmonic=.false.
     espresso=.false.
+    nthreads=1
     read(1,nml=flags)
     if(nanowires.and.norientations.eq.0) then
        if(myid.eq.0)write(error_unit,*) "Error: nanowires=.TRUE. but norientations=0"

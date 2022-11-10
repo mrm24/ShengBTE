@@ -40,6 +40,8 @@ contains
 
     integer(kind=4) :: ii,kk,ll
 
+    !$OMP PARALLEL DO default(none) collapse(2) schedule(static) shared(tau_zero,omega,velocity) &
+    !$OMP & shared(F_n,Nlist,nbands,Nequi,ALLEquiList) private(ll,ii,kk)
     do ll=1,Nlist
        do ii=1,Nbands
           do kk=1,Nequi(ll)
@@ -48,16 +50,18 @@ contains
           end do
        end do
     end do
+    !$OMP END PARALLEL DO
   end subroutine iteration0
 
   ! Advance the algorithm one iteration. F_n is used both as the input
   ! and as the output.
   subroutine iteration(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,&
-                       omega,velocity,tau_zero,F_n)
+                      & Naccum_plus_array,Naccum_minus_array,omega,velocity,tau_zero,F_n)
     implicit none
     integer(kind=4),intent(in) :: Nlist,Nequi(Nlist),ALLEquiList(Nsymm_rot,nptk)
     integer(kind=4),intent(in) :: TypeofSymmetry(Nsymm_rot,nptk)
     integer(kind=4),intent(in) :: N_plus(Nlist*Nbands),N_minus(Nlist*Nbands)
+    integer(kind=4),intent(in) :: Naccum_plus_array(nstates), Naccum_minus_array(nstates)
     real(kind=8),intent(in) :: omega(nptk,nbands),velocity(nptk,nbands,3)
     real(kind=8),intent(in) :: tau_zero(nbands,nlist)
     real(kind=8),intent(inout) :: F_n(Nbands,nptk,3)
@@ -69,19 +73,20 @@ contains
     call symmetry_map(ID_equi)
     DeltaF=0.d0
     DeltaF_reduce=0.d0
+    !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(nstates,myid,nbands,nlist) &
+    !$OMP & shared(Nequi,F_n,ID_equi,TypeofSymmetry,ALLEquiList,DeltaF_reduce) &
+    !$OMP & shared(N_plus,Naccum_plus_array,Indof2ndPhonon_plus,Indof3rdPhonon_plus,Gamma_plus) &
+    !$OMP & shared(N_minus,Naccum_minus_array,Indof2ndPhonon_minus,Indof3rdPhonon_minus,Gamma_minus) &
+    !$OMP & private(i,j,k,kk,ll,mm,nn,mmm,nnn,Naccum_plus,Naccum_minus)
     do nnn=1,nstates
         mmm=myid*nstates+nnn
         i=modulo(mmm-1,Nbands)+1
         ll=int((mmm-1)/Nbands)+1
 
         if (mmm.gt.nlist*nbands) cycle
-        if (nnn.eq.1) then
-            Naccum_plus=0
-            Naccum_minus=0
-        else
-            Naccum_plus=Naccum_plus+N_plus(mmm-1)
-            Naccum_minus=Naccum_minus+N_minus(mmm-1)
-        end if
+
+        Naccum_plus=Naccum_plus_array(nnn)
+        Naccum_minus=Naccum_minus_array(nnn)
 
         do kk=1,Nequi(ll)
            if ((N_plus(mmm).ne.0)) then
@@ -108,11 +113,16 @@ contains
            end if
         end do !kk
     end do !nnn
+    !$OMP END PARALLEL DO
 
     call MPI_BARRIER(MPI_COMM_WORLD,mmm)
     call MPI_ALLREDUCE(DeltaF_reduce,DeltaF,nptk*nbands*3,MPI_DOUBLE_PRECISION,&
          MPI_SUM,MPI_COMM_WORLD,mm)
 
+         
+
+    !$OMP PARALLEL DO default(none) collapse(2) schedule(static) shared(tau_zero,omega,velocity,ALLEquiList) &
+    !$OMP & shared(F_n,DeltaF,Nlist,nbands,Nequi) private(ll,i,kk)
     do ll=1,Nlist
        do i=1,Nbands
           do kk=1,Nequi(ll)
@@ -120,19 +130,22 @@ contains
                    omega(ALLEquiList(kk,ll),i)+tau_zero(i,ll)*DeltaF(i,ALLEquiList(kk,ll),:)
           enddo
        enddo
-    enddo         
+    enddo  
+    !$OMP END PARALLEL DO       
 
   end subroutine iteration
 
   ! Restricted variation of the above subroutine, limited to cases where kappa
   ! is an scalar. Used in the nanowire calculation.
-  subroutine iteration_scalar(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,Ntotal_plus,&
-       Ntotal_minus,omega,velocity,Gamma_plus,Gamma_minus,tau_zero,F_n)
+  subroutine iteration_scalar(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,&
+      & Ntotal_plus,Ntotal_minus,Naccum_plus_array,Naccum_minus_array, &
+      & omega,velocity,Gamma_plus,Gamma_minus,tau_zero,F_n)
     implicit none
 
     integer(kind=4),intent(in) :: Nlist,Nequi(Nlist),ALLEquiList(Nsymm_rot,nptk)
     integer(kind=4),intent(in) :: TypeofSymmetry(Nsymm_rot,nptk)
     integer(kind=4),intent(in) :: N_plus(Nlist*Nbands),N_minus(Nlist*Nbands),Ntotal_plus,Ntotal_minus
+    integer(kind=4),intent(in) :: Naccum_plus_array(nstates), Naccum_minus_array(nstates)
     real(kind=8),intent(in) :: omega(nptk,nbands),velocity(nptk,nbands)
     real(kind=8),intent(in) :: Gamma_plus(Ntotal_plus),Gamma_minus(Ntotal_minus),tau_zero(nbands,nlist)
     real(kind=8),intent(inout) :: F_n(Nbands,nptk)
@@ -144,20 +157,19 @@ contains
     DeltaF=0.d0
     DeltaF_reduce=0.d0
     call symmetry_map(ID_equi)
-
+    !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(nstates,myid,nbands,nlist) &
+    !$OMP & shared(Nequi,F_n,ID_equi,TypeofSymmetry,ALLEquiList,DeltaF_reduce) &
+    !$OMP & shared(N_plus,Naccum_plus_array,Indof2ndPhonon_plus,Indof3rdPhonon_plus,Gamma_plus) &
+    !$OMP & shared(N_minus,Naccum_minus_array,Indof2ndPhonon_minus,Indof3rdPhonon_minus,Gamma_minus) &
+    !$OMP & private(i,j,k,kk,ll,mm,nn,mmm,nnn,Naccum_plus,Naccum_minus)
     do nnn=1,nstates
         mmm=myid*nstates+nnn
         i=modulo(mmm-1,Nbands)+1
         ll=int((mmm-1)/Nbands)+1
 
         if (mmm.gt.nlist*nbands) cycle
-        if (nnn.eq.1) then
-            Naccum_plus=0
-            Naccum_minus=0
-        else
-            Naccum_plus=Naccum_plus+N_plus(mmm-1)
-            Naccum_minus=Naccum_minus+N_minus(mmm-1)
-        end if
+        Naccum_plus=Naccum_plus_array(nnn)
+        Naccum_minus=Naccum_minus_array(nnn)
 
         do kk=1,Nequi(ll)
            if ((N_plus(mmm).ne.0)) then
@@ -184,11 +196,14 @@ contains
            end if
         end do !kk
     end do ! nnn
+    !$OMP END PARALLEL DO
 
     call MPI_BARRIER(MPI_COMM_WORLD,mmm)
     call MPI_ALLREDUCE(DeltaF_reduce,DeltaF,nptk*nbands,MPI_DOUBLE_PRECISION,&
          MPI_SUM,MPI_COMM_WORLD,mm)
 
+    !$OMP PARALLEL DO default(none) collapse(2) schedule(static) shared(tau_zero,omega,velocity,ALLEquiList) &
+    !$OMP & shared(F_n,DeltaF,Nlist,nbands,Nequi) private(ll,i,kk)
     do ll=1,Nlist
        do i=1,Nbands
           do kk=1,Nequi(ll)
@@ -197,5 +212,6 @@ contains
           enddo
        enddo
     enddo   
+    !$OMP END PARALLEL DO 
   end subroutine iteration_scalar
 end module iterations

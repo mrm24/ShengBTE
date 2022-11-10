@@ -55,9 +55,13 @@ contains
           end do
        end do
     end do    
+    !$OMP PARALLEL DO default(none) collapse(2) schedule(static) &
+    !$OMP & shared(nptk,nbands,Ntri,kspace,g,grun,omega,Phi,types,cartesian) &
+    !$OMP & shared(Index_i,Index_j,Index_k,eigenvect,masses,R_k,R_j) &
+    !$OMP & private(ik,iband,itri,ialpha,ibeta,factor1,factor2,factor3)
     do ik=1,nptk
-       g=0.0
        do iband=1,nbands
+          g(iband)=0.0
           do itri=1,Ntri
              factor1=phexp(dot_product(kspace(ik,:),R_j(:,itri)))/&
                   sqrt(masses(types(Index_i(itri)))*&
@@ -82,6 +86,7 @@ contains
        endif
        end do
     end do
+    !$OMP END PARALLEL DO
   end subroutine mode_grun
 
   ! Obtain the total Grüneisen parameter as a weighted sum over modes.
@@ -94,6 +99,9 @@ contains
 
     total_grun=0.
     weight=0.
+    !$OMP PARALLEL DO default(none) collapse(2) schedule(static) &
+    !$OMP & shared(nptk,nbands,omega,grun,T) private(x,dBE,jj,ii) &
+    !$OMP & reduction(+:total_grun) reduction(+:weight)
     do jj=1,nbands
        do ii=1,nptk
           x=hbar*omega(ii,jj)/(2.*kB*T)
@@ -104,6 +112,7 @@ contains
           end if
        end do
     end do
+    !$OMP END PARALLEL DO
     total_grun=total_grun/weight
   end function total_grun
 end module gruneisen
