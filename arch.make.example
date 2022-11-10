@@ -1,4 +1,4 @@
-export FFLAGS=-traceback -debug -O2 -static_intel
+export FFLAGS=-traceback -debug -O2 -static_intel -qopenmp
 export LDFLAGS=-L/home/user/REPOSITORY/spglib/lib -lsymspg
 export MPIFC=mpif90
 MKL=$(MKLROOT)/lib/em64t/libmkl_lapack95_lp64.a -Wl,--start-group	\
