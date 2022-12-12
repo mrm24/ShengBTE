@@ -548,7 +548,7 @@ program ShengBTE
 
      if(convergence) then
         !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(nstates,myid,Nbands,nlist) &
-        !$OMP & shared(energy,velocity,eigenvect,IJK,list,Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k) &
+        !$OMP & shared(energy,velocity,eigenvect,IJK,list,Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,omega_max) &
         !$OMP & shared(N_plus,Naccum_plus_array,Gamma_plus,rate_scatt_plus_reduce,Pspace_plus_total_reduce) &
         !$OMP & shared(N_minus,Naccum_minus_array,Gamma_minus,rate_scatt_minus_reduce,Pspace_minus_total_reduce) &
         !$OMP & private(i,ll,mm,nn,Naccum_plus,Naccum_minus)
@@ -562,7 +562,7 @@ program ShengBTE
             Naccum_plus=Naccum_plus_array(nn)
             Naccum_minus=Naccum_minus_array(nn)
 
-            if (energy(list(ll),i) /= 0.d0) then
+            if (energy(list(ll),i) /= 0.d0 .and. energy(list(ll),i) .le. omega_max) then
               call Ind_driver(mm,energy,velocity,eigenvect,Nlist,List,IJK,&
                  N_plus,N_minus,Naccum_plus,Naccum_minus, &
                  Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,&

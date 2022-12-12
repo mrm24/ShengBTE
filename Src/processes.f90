@@ -76,7 +76,7 @@ contains
 
     !$OMP parallel default(none) shared(mm,myid,numprocs,ngrid,nlist,Nbands,nptk,IJK,rlattvec) &
     !$OMP & shared(energy,velocity,scalebroad,Vp_minus_matrix_reduce,Vp_plus_matrix_reduce,list) &
-    !$OMP & shared(Index_N,Index_i,Index_j,Index_k,Phi,R_k,R_j,Ntri,eigenvect) &
+    !$OMP & shared(Index_N,Index_i,Index_j,Index_k,Phi,R_k,R_j,Ntri,eigenvect,omega_max) &
     !$OMP & private(i,j,k,ii,jj,kk,ll,q,qprime,qdprime,realqprime,realqdprime,omega,omegap,omegadp) &
     !$OMP & private(ss,sigma,N_plus_count,N_minus_count,step)
 
@@ -92,7 +92,7 @@ contains
          omega=energy(list(ll),i)
          ! Loop over all processes, detecting those that are allowed and
          ! computing their amplitudes.
-         if(omega.ne.0) then
+         if(omega.ne.0 .and. omega .le. omega_max) then
             do j=1,Nbands
                do ii=1,nptk
                   qprime=IJK(:,ii)
