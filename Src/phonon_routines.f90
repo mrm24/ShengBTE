@@ -36,8 +36,6 @@ contains
     real(kind=8),intent(out) :: omega(nptk,nbands),velocity(nptk,nbands,3)
     complex(kind=8),intent(out) :: eigenvect(nptk,Nbands,Nbands)
 
-    real(kind=8),allocatable :: omega_reduce(:,:),velocity_reduce(:,:,:)
-    complex(kind=8),allocatable :: eigenvect_reduce(:,:,:)
     real(kind=8) :: kspace(nptk,3)
     integer(kind=4) :: indexK,ii,jj,kk
     character(len=1) :: aux
@@ -52,30 +50,27 @@ contains
           end do
        end do
     end do
-    allocate(omega_reduce(nptk,nbands),velocity_reduce(nptk,nbands,3),&
-         eigenvect_reduce(nptk,Nbands,Nbands))
-    omega_reduce=0.
-    velocity_reduce=0.
-    eigenvect_reduce=0.
+    omega=0.
+    velocity=0.
+    eigenvect=0.
     kk=ceiling(float(nptk)/numprocs)
     ii=min(nptk,kk*myid)+1
     jj=min(nptk,kk*(myid+1))
     ! The routine to be called depends on the input format, selected through a
     ! flag in the CONTROL file.
     if(espresso) then
-       call phonon_espresso(kspace(ii:jj,:),omega_reduce(ii:jj,:),&
-            velocity_reduce(ii:jj,:,:),eigenvect_reduce(ii:jj,:,:))
+       call phonon_espresso(kspace(ii:jj,:),omega(ii:jj,:),&
+            velocity(ii:jj,:,:),eigenvect(ii:jj,:,:))
     else
-       call phonon_phonopy(kspace(ii:jj,:),omega_reduce(ii:jj,:),&
-            velocity_reduce(ii:jj,:,:),eigenvect_reduce(ii:jj,:,:))
+       call phonon_phonopy(kspace(ii:jj,:),omega(ii:jj,:),&
+            velocity(ii:jj,:,:),eigenvect(ii:jj,:,:))
     end if
-    call MPI_ALLREDUCE(omega_reduce,omega,nptk*nbands,MPI_DOUBLE_PRECISION,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,omega,nptk*nbands,MPI_DOUBLE_PRECISION,&
          MPI_SUM,MPI_COMM_WORLD,kk)
-    call MPI_ALLREDUCE(velocity_reduce,velocity,nptk*nbands*3,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,velocity,nptk*nbands*3,&
          MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,kk)
-    call MPI_ALLREDUCE(eigenvect_reduce,eigenvect,nptk*nbands*nbands,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,eigenvect,nptk*nbands*nbands,&
          MPI_DOUBLE_COMPLEX,MPI_SUM,MPI_COMM_WORLD,kk)
-    deallocate(omega_reduce,velocity_reduce,eigenvect_reduce)
     ! Make sure that group velocities have the right symmetry at each q point.
     ! This solves the problem of undefined components for degenerate modes.
     do ii=1,nptk

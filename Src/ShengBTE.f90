@@ -40,14 +40,13 @@ program ShengBTE
   real(kind=8) :: kappa_sg(3,3),kappa_old(3,3),relchange
   integer(kind=4) :: i,j,ii,jj,kk,ll,mm,nn
   integer(kind=4) :: Tcounter
-  real(kind=8),allocatable :: energy(:,:),q0(:,:),q0_reduced(:,:),velocity(:,:,:),velocity_z(:,:)
+  real(kind=8),allocatable :: energy(:,:),q0(:,:),q0_reduced(:,:),velocity(:,:,:)
   complex(kind=8),allocatable :: eigenvect(:,:,:)
 
   real(kind=8),allocatable :: grun(:,:)
 
   real(kind=8),allocatable :: rate_scatt(:,:),rate_scatt_plus(:,:),rate_scatt_minus(:,:)
-  real(kind=8),allocatable :: rate_scatt_plus_reduce(:,:),rate_scatt_minus_reduce(:,:)
-  real(kind=8),allocatable :: tau_zero(:,:),tau(:,:),tau_b(:,:),tau2(:,:),tau_b2(:,:)
+  real(kind=8),allocatable :: tau_zero(:,:),tau(:,:),tau_b(:,:),tau2(:,:)
   real(kind=8),allocatable :: dos(:),pdos(:,:),rate_scatt_isotope(:,:)
   real(kind=8),allocatable :: F_n(:,:,:),F_n_0(:,:,:),F_n_aux(:,:)
   real(kind=8),allocatable :: ThConductivity(:,:,:)
@@ -67,8 +66,8 @@ program ShengBTE
   integer(kind=4),allocatable :: N_plus(:),N_minus(:),Naccum_plus_array(:),Naccum_minus_array(:)
   integer(kind=4) :: Naccum_plus, Naccum_minus
   real(kind=8) :: radnw,kappa_or_old
-  real(kind=8),allocatable :: Pspace_plus_total(:,:), Pspace_plus_total_reduce(:,:)
-  real(kind=8),allocatable :: Pspace_minus_total(:,:), Pspace_minus_total_reduce(:,:)
+  real(kind=8),allocatable :: Pspace_plus_total(:,:)
+  real(kind=8),allocatable :: Pspace_minus_total(:,:)
   real(kind=8),allocatable :: ffunc(:,:),radnw_range(:),v_or(:,:),F_or(:,:)
   real(kind=8),allocatable :: kappa_or(:),kappa_wires(:,:)
 
@@ -106,7 +105,7 @@ program ShengBTE
   !$    nthreads = max_nthreads
   !$ end if
 
-  if(myid.eq.0) then
+  if((myid == 0) .and. (nthreads > 1)) then
      write(*,'(A,I0,A)') " Info: Each MPI process will use ", nthreads," thread(s)"
   end if
 
@@ -115,7 +114,6 @@ program ShengBTE
   allocate(grun(nptk,nbands))
   allocate(q0(nptk,3),q0_reduced(nptk,3))
   allocate(velocity(nptk,nbands,3))
-  allocate(velocity_z(nptk,nbands))
   allocate(IJK(3,nptk))
   allocate(Index_N(0:(ngrid(1)-1),0:(ngrid(2)-1),0:(ngrid(3)-1)))
   allocate(F_n(nbands,nptk,3))
@@ -128,10 +126,12 @@ program ShengBTE
   allocate(AllEquiList(nsymm_rot,nptk))
   allocate(TypeOfSymmetry(nsymm_rot,nptk))
   allocate(eqclasses(nptk))
-  allocate(ffunc(nptk,nbands))
-  allocate(v_or(nptk,nbands))
-  allocate(F_or(nbands,nptk))
-  allocate(kappa_or(nbands))
+  if (nanowires) then
+    allocate(ffunc(nptk,nbands))
+    allocate(v_or(nptk,nbands))
+    allocate(F_or(nbands,nptk))
+    allocate(kappa_or(nbands))
+  end if
 
   ! Obtain the q-point equivalence classes defined by symmetry
   ! operations.
@@ -250,35 +250,29 @@ program ShengBTE
 
   ! Compute the normalized boundary scattering rates.
   allocate(tau_b(Nbands,Nlist))
-  allocate(tau_b2(Nbands,nptk))
   !$OMP PARALLEL default(none) private(ll,ii) &
-  !$OMP & shared(nlist,nbands,nptk,tau_b,tau_b2,velocity,list)
+  !$OMP & shared(nlist,nbands,nptk,tau_b,velocity,list)
 
   !$OMP DO collapse(2) schedule(static)
   do ll=1,Nlist
      do ii=1,Nbands
-        tau_b(ii,ll)=1.d00/dnrm2(3,velocity(List(ll),ii,:),1)
+        tau_b(ii,ll)=1.d0/dnrm2(3,velocity(List(ll),ii,:),1)
      end do
   end do
   !$OMP END DO
-  !$OMP DO collapse(2) schedule(static)
-  do ll=1,nptk
-     do ii=1,Nbands
-        tau_b2(ii,ll)=1.d00/dnrm2(3,velocity(ll,ii,:),1)
-     end do
-  end do
+  !$OMP END PARALLEL
   if (myid.eq.0) then
      write(aux,"(I0)") Nbands
      open(2,file="BTE.w_boundary",status="replace")
      do i=1,Nbands
         do ll = 1,Nlist
-           write(2,"(2E20.10)") energy(list(ll),i),  1./tau_b(i,ll)
+           write(2,"(2E20.10)") energy(list(ll),i),  1.d0/tau_b(i,ll)
         enddo
      end do
      close(2)
   endif
-  !$OMP END DO
-  !$OMP END PARALLEL
+  deallocate(tau_b)
+
   ! Locally adaptive estimates of the total and projected densities of states.
   allocate(ticks(nticks))
   allocate(dos(nticks))
@@ -298,7 +292,7 @@ program ShengBTE
      end do
      close(1)
   end if
-  deallocate(ticks)
+  deallocate(ticks,dos,pdos)
 
 
   allocate(rate_scatt_isotope(Nbands,Nlist))
@@ -323,8 +317,6 @@ program ShengBTE
   allocate(rate_scatt(Nbands,Nlist))
   allocate(rate_scatt_plus(Nbands,Nlist))
   allocate(rate_scatt_minus(Nbands,Nlist))
-  allocate(rate_scatt_plus_reduce(Nbands,Nlist))
-  allocate(rate_scatt_minus_reduce(Nbands,Nlist))
   allocate(tau_zero(Nbands,Nlist))
   allocate(tau(Nbands,Nlist))
   allocate(tau2(Nbands,nptk))
@@ -505,9 +497,7 @@ program ShengBTE
   enddo
 
   allocate(Pspace_plus_total(Nbands,Nlist))
-  allocate(Pspace_plus_total_reduce(Nbands,Nlist))
   allocate(Pspace_minus_total(Nbands,Nlist))
-  allocate(Pspace_minus_total_reduce(Nbands,Nlist))
   open(303,file="BTE.KappaTensorVsT_RTA")
   if(convergence) then
      open(403,file="BTE.KappaTensorVsT_CONV")
@@ -538,19 +528,15 @@ program ShengBTE
 
      rate_scatt=0.d0
      rate_scatt_plus=0.d0
-     rate_scatt_plus_reduce=0.d0
      rate_scatt_minus=0.d0
-     rate_scatt_minus_reduce=0.d0
      Pspace_plus_total=0.d0
-     Pspace_plus_total_reduce=0.d0
      Pspace_minus_total=0.d0
-     Pspace_minus_total_reduce=0.d0
 
      if(convergence) then
         !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(nstates,myid,Nbands,nlist) &
         !$OMP & shared(energy,velocity,eigenvect,IJK,list,Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,omega_max) &
-        !$OMP & shared(N_plus,Naccum_plus_array,Gamma_plus,rate_scatt_plus_reduce,Pspace_plus_total_reduce) &
-        !$OMP & shared(N_minus,Naccum_minus_array,Gamma_minus,rate_scatt_minus_reduce,Pspace_minus_total_reduce) &
+        !$OMP & shared(N_plus,Naccum_plus_array,Gamma_plus,rate_scatt_plus,Pspace_plus_total) &
+        !$OMP & shared(N_minus,Naccum_minus_array,Gamma_minus,rate_scatt_minus,Pspace_minus_total) &
         !$OMP & private(i,ll,mm,nn,Naccum_plus,Naccum_minus)
         do nn=1,nstates
             mm=myid*nstates+nn
@@ -566,20 +552,27 @@ program ShengBTE
               call Ind_driver(mm,energy,velocity,eigenvect,Nlist,List,IJK,&
                  N_plus,N_minus,Naccum_plus,Naccum_minus, &
                  Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,&
-                 rate_scatt_plus_reduce(i,ll),rate_scatt_minus_reduce(i,ll),&
-                 Pspace_plus_total_reduce(i,ll),Pspace_minus_total_reduce(i,ll))
+                 rate_scatt_plus(i,ll),rate_scatt_minus(i,ll),&
+                 Pspace_plus_total(i,ll),Pspace_minus_total(i,ll))
             end if
         enddo 
         !$OMP END PARALLEL DO
         call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-        call MPI_ALLREDUCE(rate_scatt_plus_reduce,rate_scatt_plus,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
+        call MPI_ALLREDUCE(MPI_IN_PLACE,rate_scatt_plus,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
              MPI_SUM,MPI_COMM_WORLD,ll)
-        call MPI_ALLREDUCE(rate_scatt_minus_reduce,rate_scatt_minus,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
+        call MPI_ALLREDUCE(MPI_IN_PLACE,rate_scatt_minus,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
              MPI_SUM,MPI_COMM_WORLD,ll)
-        call MPI_ALLREDUCE(Pspace_plus_total_reduce,Pspace_plus_total,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
-             MPI_SUM,MPI_COMM_WORLD,ll)
-        call MPI_ALLREDUCE(Pspace_minus_total_reduce,Pspace_minus_total,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
-             MPI_SUM,MPI_COMM_WORLD,ll)
+        if (myid == 0) then
+          call MPI_REDUCE(MPI_IN_PLACE,Pspace_plus_total,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
+               MPI_SUM,0,MPI_COMM_WORLD,ll)
+          call MPI_REDUCE(MPI_IN_PLACE,Pspace_minus_total,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
+               MPI_SUM,0,MPI_COMM_WORLD,ll)
+        else
+          call MPI_REDUCE(Pspace_plus_total,Pspace_plus_total,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
+               MPI_SUM,0,MPI_COMM_WORLD,ll)
+          call MPI_REDUCE(Pspace_minus_total,Pspace_minus_total,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
+               MPI_SUM,0,MPI_COMM_WORLD,ll)
+        end if
         rate_scatt=rate_scatt_plus+rate_scatt_minus
      else
         call RTA_driver(energy,velocity,eigenvect,Nlist,List,IJK,&
@@ -616,8 +609,8 @@ program ShengBTE
         open(1,file="BTE.w_anharmonic",status="replace")
         open(2,file="BTE.w_anharmonic_plus",status="replace")
         open(3,file="BTE.w_anharmonic_minus",status="replace")
-        do i=1,Nbands
-           do ll=1,Nlist
+        do ll=1,Nlist
+           do i=1,Nbands
               write(1,"(2E20.10)") energy(list(ll),i),rate_scatt(i,ll)
               write(2,"(2E20.10)") energy(list(ll),i),rate_scatt_plus(i,ll)
               write(3,"(2E20.10)") energy(list(ll),i),rate_scatt_minus(i,ll)
@@ -630,6 +623,7 @@ program ShengBTE
 
      ! Obtain the total scattering rates in the relaxation time approximation.
      rate_scatt=rate_scatt+rate_scatt_isotope
+     deallocate(rate_scatt_isotope)
      if(myid.eq.0) then
         open(1,file="BTE.w",status="replace")
         do i=1,Nbands
@@ -645,7 +639,7 @@ program ShengBTE
      !$OMP & shared(nlist,nbands,rate_scatt,tau_zero) private(ll,i)
      do ll = 1,Nlist
         do i=1,Nbands
-           if(rate_scatt(i,ll).ne.0) then
+           if(rate_scatt(i,ll)>1.0d-8) then
               tau_zero(i,ll)=1.0d0/rate_scatt(i,ll)
            end if
         end do
@@ -671,7 +665,7 @@ program ShengBTE
         write(2001,"(I9,"//trim(adjustl(aux))//"E20.10)") 0,ThConductivity
         write(2002,"(I9,9E20.10,E20.10)") 0,sum(ThConductivity,dim=1)
         write(2003,"(I9,E20.10,E20.10)") 0,&
-             sum(sum(ThConductivity,dim=1),reshape((/((i==j,i=1,3),j=1,3)/),(/3,3/)))/3.
+             sum(sum(ThConductivity,dim=1),reshape((/((i==j,i=1,3),j=1,3)/),(/3,3/)))/3.0D0
         write(303,"(F7.1,9E14.5)") T,sum(ThConductivity,dim=1)
         flush(303)
      endif

@@ -51,8 +51,6 @@ contains
     real(kind=8) :: sigma
     real(kind=8) :: omega,omegap,omegadp
     real(kind=8) :: realqprime(3),realqdprime(3)
-    
-    complex(kind=8),allocatable :: Vp_plus_matrix_reduce(:,:), Vp_minus_matrix_reduce(:,:)
 
     do ii=0,Ngrid(1)-1        ! G1 direction
        do jj=0,Ngrid(2)-1     ! G2 direction
@@ -64,18 +62,14 @@ contains
 
     allocate(Vp_plus_matrix(Nbands*NList, maxsize), &
              Vp_minus_matrix(Nbands*NList, maxsize))
-    allocate(Vp_plus_matrix_reduce(Nbands*NList, maxsize), &
-             Vp_minus_matrix_reduce(Nbands*NList, maxsize))
 
-    Vp_plus_matrix_reduce = (0.d0, 0.d0)
-    Vp_minus_matrix_reduce = (0.d0, 0.d0)
     Vp_plus_matrix = (0.d0, 0.d0)
     Vp_minus_matrix = (0.d0, 0.d0)
 
     call MPI_BARRIER(MPI_COMM_WORLD,mm)
 
     !$OMP parallel default(none) shared(mm,myid,numprocs,ngrid,nlist,Nbands,nptk,IJK,rlattvec) &
-    !$OMP & shared(energy,velocity,scalebroad,Vp_minus_matrix_reduce,Vp_plus_matrix_reduce,list) &
+    !$OMP & shared(energy,velocity,scalebroad,Vp_minus_matrix,Vp_plus_matrix,list) &
     !$OMP & shared(Index_N,Index_i,Index_j,Index_k,Phi,R_k,R_j,Ntri,eigenvect,omega_max) &
     !$OMP & private(i,j,k,ii,jj,kk,ll,q,qprime,qdprime,realqprime,realqdprime,omega,omegap,omegadp) &
     !$OMP & private(ss,sigma,N_plus_count,N_minus_count,step)
@@ -111,7 +105,7 @@ contains
                               velocity(ss,k,:))
                         if(abs(omega+omegap-omegadp).le.(2.d0*sigma)) then
                            N_plus_count = N_plus_count + 1
-                           Vp_plus_matrix_reduce(mm, N_plus_count)=Vp_plus(i,j,k,list(ll),ii,ss,&
+                           Vp_plus_matrix(mm, N_plus_count)=Vp_plus(i,j,k,list(ll),ii,ss,&
                                  realqprime,realqdprime,eigenvect,&
                                  Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k)
                         end if
@@ -129,7 +123,7 @@ contains
                               velocity(ss,k,:))
                         if (abs(omega-omegap-omegadp).le.(2.d0*sigma)) then
                            N_minus_count = N_minus_count + 1
-                           Vp_minus_matrix_reduce(mm, N_minus_count)=Vp_minus(i,j,k,list(ll),ii,ss,&
+                           Vp_minus_matrix(mm, N_minus_count)=Vp_minus(i,j,k,list(ll),ii,ss,&
                                  realqprime,realqdprime,eigenvect,&
                                  Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k)
                         end if
@@ -147,11 +141,10 @@ contains
     ! always good to have a bar before allreduce
     call MPI_BARRIER(MPI_COMM_WORLD,ll)
 
-    call MPI_ALLREDUCE(Vp_plus_matrix_reduce,Vp_plus_matrix,Nbands*NList*maxsize,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,Vp_plus_matrix,Nbands*NList*maxsize,&
          MPI_DOUBLE_COMPLEX,MPI_SUM,MPI_COMM_WORLD,ll)
-    call MPI_ALLREDUCE(Vp_minus_matrix_reduce,Vp_minus_matrix,Nbands*NList*maxsize,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,Vp_minus_matrix,Nbands*NList*maxsize,&
          MPI_DOUBLE_COMPLEX,MPI_SUM,MPI_COMM_WORLD,ll)
-    deallocate(Vp_plus_matrix_reduce, Vp_minus_matrix_reduce)
   end subroutine calculate_Vp
 
   ! Compute one of the matrix elements involved in the calculation of Ind_plus.
@@ -515,41 +508,33 @@ contains
     real(kind=8),intent(out) :: Pspace_minus_total(Nbands,Nlist)
 
     integer(kind=4) :: mm
-    integer(kind=4) :: N_plus_reduce(Nlist*Nbands)
-    integer(kind=4) :: N_minus_reduce(Nlist*Nbands)
-    real(kind=8) :: Pspace_plus_reduce(Nlist*Nbands)
-    real(kind=8) :: Pspace_minus_reduce(Nlist*Nbands)
 
     Pspace_plus_total=0.d0
-    Pspace_plus_reduce=0.d0
     Pspace_minus_total=0.d0
-    Pspace_minus_reduce=0.d0
     N_plus=0
     N_minus=0
-    N_plus_reduce=0
-    N_minus_reduce=0
 
     !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(nbands,nlist,numprocs,myid,omega_max) &
     !$OMP & shared(energy,velocity,List,IJK) &
-    !$OMP & shared(N_plus_reduce,Pspace_plus_reduce,N_minus_reduce,Pspace_minus_reduce) &
+    !$OMP & shared(N_plus,Pspace_plus_total,N_minus,Pspace_minus_total) &
     !$OMP & private(mm)
     do mm=myid+1,Nbands*Nlist,numprocs
        if (energy(List(int((mm-1)/Nbands)+1),modulo(mm-1,Nbands)+1).le.omega_max) then
           call NP_plus(mm,energy,velocity,Nlist,List,IJK,&
-               N_plus_reduce(mm),Pspace_plus_reduce(mm))
+               N_plus(mm),Pspace_plus_total(modulo(mm-1,Nbands)+1, int((mm-1)/Nbands)+1))
           call NP_minus(mm,energy,velocity,Nlist,List,IJK,&
-               N_minus_reduce(mm),Pspace_minus_reduce(mm))
+               N_minus(mm),Pspace_minus_total(modulo(mm-1,Nbands)+1, int((mm-1)/Nbands)+1))
        endif
     end do
     !$OMP END PARALLEL DO
 
-    call MPI_ALLREDUCE(N_plus_reduce,N_plus,Nbands*Nlist,MPI_INTEGER,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,N_plus,Nbands*Nlist,MPI_INTEGER,&
          MPI_SUM,MPI_COMM_WORLD,mm)
-    call MPI_ALLREDUCE(N_minus_reduce,N_minus,Nbands*Nlist,MPI_INTEGER,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,N_minus,Nbands*Nlist,MPI_INTEGER,&
          MPI_SUM,MPI_COMM_WORLD,mm)
-    call MPI_ALLREDUCE(Pspace_plus_reduce,Pspace_plus_total,Nbands*Nlist,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,Pspace_plus_total,Nbands*Nlist,&
          MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,mm)
-    call MPI_ALLREDUCE(Pspace_minus_reduce,Pspace_minus_total,Nbands*Nlist,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,Pspace_minus_total,Nbands*Nlist,&
          MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,mm)
   end subroutine NP_driver
 
@@ -734,21 +719,14 @@ contains
     integer(kind=4) :: ll
     integer(kind=4) :: mm
     real(kind=8) :: Gamma_plus,Gamma_minus
-    real(kind=8) :: rate_scatt_plus_reduce(Nbands,Nlist),rate_scatt_minus_reduce(Nbands,Nlist)
-    real(kind=8) :: WP3_plus_reduce(Nbands*Nlist)
-    real(kind=8) :: WP3_minus_reduce(Nbands*Nlist)
 
     rate_scatt=0.d00
-    rate_scatt_plus_reduce=0.d00
-    rate_scatt_minus_reduce=0.d00
     WP3_plus=0.d00
     WP3_minus=0.d00
-    WP3_plus_reduce=0.d00
-    WP3_minus_reduce=0.d00
 
     !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(Nbands,NList,myid,numprocs,Ntri) &
     !$OMP & shared(energy,velocity,eigenvect,List,IJK,Phi,R_j,R_k,Index_i,Index_j,Index_k,omega_max) &
-    !$OMP & shared(WP3_plus_reduce,WP3_minus_reduce,rate_scatt_plus_reduce,rate_scatt_minus_reduce) &
+    !$OMP & shared(WP3_plus,WP3_minus,rate_scatt_plus,rate_scatt_minus) &
     !$OMP & private(mm,i,ll,Gamma_plus,Gamma_minus)
     do mm=myid+1,Nbands*NList,numprocs
        i=modulo(mm-1,Nbands)+1
@@ -756,23 +734,23 @@ contains
        if (energy(List(ll),i).le.omega_max) then
           call RTA_plus(mm,energy,velocity,eigenvect,Nlist,List,&
                Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,IJK,&
-               Gamma_plus,WP3_plus_reduce(mm))
-          rate_scatt_plus_reduce(i,ll)=Gamma_plus
+               Gamma_plus,WP3_plus(i,ll))
+          rate_scatt_plus(i,ll)=Gamma_plus
           call RTA_minus(mm,energy,velocity,eigenvect,Nlist,List,&
                Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,IJK,&
-               Gamma_minus,WP3_minus_reduce(mm))
-          rate_scatt_minus_reduce(i,ll)=Gamma_minus*5.D-1
+               Gamma_minus,WP3_minus(i,ll))
+          rate_scatt_minus(i,ll)=Gamma_minus*5.D-1
        endif
     end do
     !$OMP END PARALLEL DO
 
-    call MPI_ALLREDUCE(rate_scatt_plus_reduce,rate_scatt_plus,Nbands*Nlist,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,rate_scatt_plus,Nbands*Nlist,&
          MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,mm)
-    call MPI_ALLREDUCE(rate_scatt_minus_reduce,rate_scatt_minus,Nbands*Nlist,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,rate_scatt_minus,Nbands*Nlist,&
          MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,mm)
-    call MPI_ALLREDUCE(WP3_plus_reduce,WP3_plus,Nbands*Nlist,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,WP3_plus,Nbands*Nlist,&
          MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,mm)
-    call MPI_ALLREDUCE(WP3_minus_reduce,WP3_minus,Nbands*Nlist,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,WP3_minus,Nbands*Nlist,&
          MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,mm)
     rate_scatt=rate_scatt_plus+rate_scatt_minus
   end subroutine RTA_driver

@@ -68,13 +68,12 @@ contains
 
     integer(kind=4) :: ID_equi(Nsymm_rot,nptk),Naccum_plus,Naccum_minus
     integer(kind=4) :: i,j,k,jj,kk,ll,mm,nn,mmm,nnn
-    real(kind=8) :: DeltaF(Nbands,nptk,3), DeltaF_reduce(Nbands,nptk,3)
+    real(kind=8) :: DeltaF(Nbands,nptk,3)
 
     call symmetry_map(ID_equi)
     DeltaF=0.d0
-    DeltaF_reduce=0.d0
     !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(nstates,myid,nbands,nlist) &
-    !$OMP & shared(Nequi,F_n,ID_equi,TypeofSymmetry,ALLEquiList,DeltaF_reduce) &
+    !$OMP & shared(Nequi,F_n,ID_equi,TypeofSymmetry,ALLEquiList,DeltaF) &
     !$OMP & shared(N_plus,Naccum_plus_array,Indof2ndPhonon_plus,Indof3rdPhonon_plus,Gamma_plus) &
     !$OMP & shared(N_minus,Naccum_minus_array,Indof2ndPhonon_minus,Indof3rdPhonon_minus,Gamma_minus) &
     !$OMP & private(i,j,k,kk,ll,mm,nn,mmm,nnn,Naccum_plus,Naccum_minus)
@@ -95,7 +94,7 @@ contains
                  mm=int((Indof2ndPhonon_plus(Naccum_plus+jj)-1)/Nbands)+1
                  k=modulo(Indof3rdPhonon_plus(Naccum_plus+jj)-1,Nbands)+1
                  nn=int((Indof3rdPhonon_plus(Naccum_plus+jj)-1)/Nbands)+1
-                 DeltaF_reduce(i,ALLEquiList(kk,ll),:)=DeltaF_reduce(i,ALLEquiList(kk,ll),:)+&
+                 DeltaF(i,ALLEquiList(kk,ll),:)=DeltaF(i,ALLEquiList(kk,ll),:)+&
                       Gamma_plus(Naccum_plus+jj)*(F_n(k,ID_equi(TypeofSymmetry(kk,ll),nn),:)-&
                       F_n(j,ID_equi(TypeofSymmetry(kk,ll),mm),:))
               end do !jj
@@ -106,7 +105,7 @@ contains
                  mm=int((Indof2ndPhonon_minus(Naccum_minus+jj)-1)/Nbands)+1
                  k=modulo(Indof3rdPhonon_minus(Naccum_minus+jj)-1,Nbands)+1
                  nn=int((Indof3rdPhonon_minus(Naccum_minus+jj)-1)/Nbands)+1
-                 DeltaF_reduce(i,ALLEquiList(kk,ll),:)=DeltaF_reduce(i,ALLEquiList(kk,ll),:)+&
+                 DeltaF(i,ALLEquiList(kk,ll),:)=DeltaF(i,ALLEquiList(kk,ll),:)+&
                       Gamma_minus(Naccum_minus+jj)*(F_n(k,ID_equi(TypeofSymmetry(kk,ll),nn),:)+&
                       F_n(j,ID_equi(TypeofSymmetry(kk,ll),mm),:))*5.D-1
               end do !jj
@@ -116,7 +115,7 @@ contains
     !$OMP END PARALLEL DO
 
     call MPI_BARRIER(MPI_COMM_WORLD,mmm)
-    call MPI_ALLREDUCE(DeltaF_reduce,DeltaF,nptk*nbands*3,MPI_DOUBLE_PRECISION,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,DeltaF,nptk*nbands*3,MPI_DOUBLE_PRECISION,&
          MPI_SUM,MPI_COMM_WORLD,mm)
 
          
@@ -152,13 +151,12 @@ contains
 
     integer(kind=4) :: ID_equi(Nsymm_Rot,nptk),Naccum_plus,Naccum_minus
     integer(kind=4) :: i,j,k,jj,kk,ll,mm,nn,mmm,nnn
-    real(kind=8) :: DeltaF(Nbands,nptk), DeltaF_reduce(Nbands,nptk)
+    real(kind=8) :: DeltaF(Nbands,nptk)
 
     DeltaF=0.d0
-    DeltaF_reduce=0.d0
     call symmetry_map(ID_equi)
     !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(nstates,myid,nbands,nlist) &
-    !$OMP & shared(Nequi,F_n,ID_equi,TypeofSymmetry,ALLEquiList,DeltaF_reduce) &
+    !$OMP & shared(Nequi,F_n,ID_equi,TypeofSymmetry,ALLEquiList,DeltaF) &
     !$OMP & shared(N_plus,Naccum_plus_array,Indof2ndPhonon_plus,Indof3rdPhonon_plus,Gamma_plus) &
     !$OMP & shared(N_minus,Naccum_minus_array,Indof2ndPhonon_minus,Indof3rdPhonon_minus,Gamma_minus) &
     !$OMP & private(i,j,k,kk,ll,mm,nn,mmm,nnn,Naccum_plus,Naccum_minus)
@@ -178,7 +176,7 @@ contains
                   mm=int((Indof2ndPhonon_plus(Naccum_plus+jj)-1)/Nbands)+1
                   k=modulo(Indof3rdPhonon_plus(Naccum_plus+jj)-1,Nbands)+1
                   nn=int((Indof3rdPhonon_plus(Naccum_plus+jj)-1)/Nbands)+1
-                  DeltaF_reduce(i,ALLEquiList(kk,ll))=DeltaF_reduce(i,ALLEquiList(kk,ll))+&
+                  DeltaF(i,ALLEquiList(kk,ll))=DeltaF(i,ALLEquiList(kk,ll))+&
                         Gamma_plus(Naccum_plus+jj)*(F_n(k,ID_equi(TypeofSymmetry(kk,ll),nn))-&
                         F_n(j,ID_equi(TypeofSymmetry(kk,ll),mm)))
               end do !jj
@@ -189,7 +187,7 @@ contains
                   mm=int((Indof2ndPhonon_minus(Naccum_minus+jj)-1)/Nbands)+1
                   k=modulo(Indof3rdPhonon_minus(Naccum_minus+jj)-1,Nbands)+1
                   nn=int((Indof3rdPhonon_minus(Naccum_minus+jj)-1)/Nbands)+1
-                  DeltaF_reduce(i,ALLEquiList(kk,ll))=DeltaF_reduce(i,ALLEquiList(kk,ll))+&
+                  DeltaF(i,ALLEquiList(kk,ll))=DeltaF(i,ALLEquiList(kk,ll))+&
                         Gamma_minus(Naccum_minus+jj)*(F_n(k,ID_equi(TypeofSymmetry(kk,ll),nn))+&
                         F_n(j,ID_equi(TypeofSymmetry(kk,ll),mm)))*5.D-1
                end do !jj
@@ -199,7 +197,7 @@ contains
     !$OMP END PARALLEL DO
 
     call MPI_BARRIER(MPI_COMM_WORLD,mmm)
-    call MPI_ALLREDUCE(DeltaF_reduce,DeltaF,nptk*nbands,MPI_DOUBLE_PRECISION,&
+    call MPI_ALLREDUCE(MPI_IN_PLACE,DeltaF,nptk*nbands,MPI_DOUBLE_PRECISION,&
          MPI_SUM,MPI_COMM_WORLD,mm)
 
     !$OMP PARALLEL DO default(none) collapse(2) schedule(static) shared(tau_zero,omega,velocity,ALLEquiList) &
