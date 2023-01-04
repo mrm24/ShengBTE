@@ -63,7 +63,7 @@ program ShengBTE
   integer(kind=4) :: nlist,Ntotal_plus,Ntotal_minus
   integer(kind=4),allocatable :: nequi(:),list(:)
   integer(kind=4),allocatable :: AllEquiList(:,:),TypeofSymmetry(:,:),eqclasses(:)
-  integer(kind=4),allocatable :: N_plus(:),N_minus(:),Naccum_plus_array(:),Naccum_minus_array(:)
+  integer(kind=4),allocatable :: N_plus(:),N_minus(:)
   integer(kind=4) :: Naccum_plus, Naccum_minus
   real(kind=8) :: radnw,kappa_or_old
   real(kind=8),allocatable :: Pspace_plus_total(:,:)
@@ -314,6 +314,7 @@ program ShengBTE
      close(1)
   end if
 
+  nstates=ceiling(real(nlist*nbands,kind=8)/real(numprocs,kind=8))
   allocate(rate_scatt(Nbands,Nlist))
   allocate(rate_scatt_plus(Nbands,Nlist))
   allocate(rate_scatt_minus(Nbands,Nlist))
@@ -674,7 +675,7 @@ program ShengBTE
      if(convergence) then
         do ii=1,maxiter
            call iteration(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,&
-              & Naccum_plus_array,Naccum_minus_array,energy,velocity,tau_zero,F_n)
+              & energy,velocity,tau_zero,F_n)
            if(myid.eq.0) then
                kappa_old=sum(ThConductivity,dim=1)
                 ! Correct F_n to prevent it drifting away from the symmetry of the system.
@@ -859,8 +860,8 @@ program ShengBTE
               if(convergence) then
                  do ii=1,maxiter
                     call iteration_scalar(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,&
-                         & Ntotal_plus,Ntotal_minus,Naccum_plus_array,Naccum_minus_array, &
-                         & energy,v_or,Gamma_plus,Gamma_minus,tau_zero,F_n_aux)
+                         & Ntotal_plus,Ntotal_minus,energy,v_or,Gamma_plus,Gamma_minus,&
+                         tau_zero,F_n_aux)
                     if (myid .eq. 0) then
                         kappa_or_old=sum(kappa_or)
                         !$OMP PARALLEL DO default(none) schedule(static) collapse(2) &

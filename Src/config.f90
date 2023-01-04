@@ -63,6 +63,8 @@ module config
   integer(kind=4),allocatable :: Indof2ndPhonon_plus(:),Indof3rdPhonon_plus(:)
   integer(kind=4),allocatable :: Indof2ndPhonon_minus(:),Indof3rdPhonon_minus(:)
   real(kind=8),allocatable :: Gamma_plus(:),Gamma_minus(:)
+  ! Index of Vp, Ind*, Gamma arrays for a particular state on this mpi process
+  integer(kind=4),allocatable :: Naccum_plus_array(:),Naccum_minus_array(:)
   ! MPI variables, assigned in ShengBTE.f90.
   integer(kind=4) :: myid,numprocs,nstates
   ! Number of threads requested by user

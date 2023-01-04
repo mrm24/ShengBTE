@@ -56,12 +56,11 @@ contains
   ! Advance the algorithm one iteration. F_n is used both as the input
   ! and as the output.
   subroutine iteration(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,&
-                      & Naccum_plus_array,Naccum_minus_array,omega,velocity,tau_zero,F_n)
+                      & omega,velocity,tau_zero,F_n)
     implicit none
     integer(kind=4),intent(in) :: Nlist,Nequi(Nlist),ALLEquiList(Nsymm_rot,nptk)
     integer(kind=4),intent(in) :: TypeofSymmetry(Nsymm_rot,nptk)
     integer(kind=4),intent(in) :: N_plus(Nlist*Nbands),N_minus(Nlist*Nbands)
-    integer(kind=4),intent(in) :: Naccum_plus_array(nstates), Naccum_minus_array(nstates)
     real(kind=8),intent(in) :: omega(nptk,nbands),velocity(nptk,nbands,3)
     real(kind=8),intent(in) :: tau_zero(nbands,nlist)
     real(kind=8),intent(inout) :: F_n(Nbands,nptk,3)
@@ -137,14 +136,13 @@ contains
   ! Restricted variation of the above subroutine, limited to cases where kappa
   ! is an scalar. Used in the nanowire calculation.
   subroutine iteration_scalar(Nlist,Nequi,ALLEquiList,TypeofSymmetry,N_plus,N_minus,&
-      & Ntotal_plus,Ntotal_minus,Naccum_plus_array,Naccum_minus_array, &
+      & Ntotal_plus,Ntotal_minus,&
       & omega,velocity,Gamma_plus,Gamma_minus,tau_zero,F_n)
     implicit none
 
     integer(kind=4),intent(in) :: Nlist,Nequi(Nlist),ALLEquiList(Nsymm_rot,nptk)
     integer(kind=4),intent(in) :: TypeofSymmetry(Nsymm_rot,nptk)
     integer(kind=4),intent(in) :: N_plus(Nlist*Nbands),N_minus(Nlist*Nbands),Ntotal_plus,Ntotal_minus
-    integer(kind=4),intent(in) :: Naccum_plus_array(nstates), Naccum_minus_array(nstates)
     real(kind=8),intent(in) :: omega(nptk,nbands),velocity(nptk,nbands)
     real(kind=8),intent(in) :: Gamma_plus(Ntotal_plus),Gamma_minus(Ntotal_minus),tau_zero(nbands,nlist)
     real(kind=8),intent(inout) :: F_n(Nbands,nptk)
