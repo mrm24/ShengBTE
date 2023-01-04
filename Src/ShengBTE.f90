@@ -344,6 +344,24 @@ program ShengBTE
   if(myid.eq.0)write(*,*) "Info: Ntotal_minus =",Ntotal_minus
 
 
+  allocate(Naccum_plus_array(nstates))
+  allocate(Naccum_minus_array(nstates))
+  Naccum_plus=0
+  Naccum_minus=0
+  Naccum_plus_array = 0
+  Naccum_minus_array = 0
+  do nn=1,nstates
+      mm=myid*nstates+nn
+      if (mm.gt.nlist*nbands) cycle
+      ! keep track of how many processes are required in the for the states 1->(nn-1)
+      ! to allow accurate array accessing across MPI processes and threads
+      Naccum_plus_array(nn) = Naccum_plus
+      Naccum_minus_array(nn) = Naccum_minus
+
+      Naccum_plus=Naccum_plus+N_plus(mm)
+      Naccum_minus=Naccum_minus+N_minus(mm)
+  enddo
+
 
   if(myid.eq.0) then
      open(1,file="BTE.P3_plus",status="replace")
@@ -470,7 +488,7 @@ program ShengBTE
   if (myid.eq.0) write(*,*) "Info: max(N_plus), max(N_minus)", MAXVAL(N_plus), MAXVAL(N_minus)
   if (myid.eq.0) write(*,*) "Info: calculating Vp_plus and Vp_minus"
   call calculate_Vp(energy,velocity,eigenvect,Nlist,List,&
-       Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,IJK, MAX(MAXVAL(N_plus), MAXVAL(N_minus)))
+       Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,IJK,Naccum_plus,Naccum_minus)
 
   ! This is the most expensive part of the calculation: obtaining the
   ! three-phonon scattering amplitudes for all allowed processes.
@@ -478,24 +496,6 @@ program ShengBTE
   ! requested (i.e., when the relaxation-time approximation is
   ! enough) we use optimized routines with a much smaller memory footprint.
   ! weighted phase space volume per mode .
-  nstates=ceiling(float(nlist*nbands)/numprocs)
-  allocate(Naccum_plus_array(nstates))
-  allocate(Naccum_minus_array(nstates))
-  Naccum_plus=0
-  Naccum_minus=0
-  Naccum_plus_array = 0
-  Naccum_minus_array = 0
-  do nn=1,nstates
-      mm=myid*nstates+nn
-      if (mm.gt.nlist*nbands) cycle
-      ! keep track of how many processes are required in the for the states 1->(nn-1)
-      ! to allow accurate array accessing across MPI processes and threads
-      Naccum_plus_array(nn) = Naccum_plus
-      Naccum_minus_array(nn) = Naccum_minus
-
-      Naccum_plus=Naccum_plus+N_plus(mm)
-      Naccum_minus=Naccum_minus+N_minus(mm)
-  enddo
 
   allocate(Pspace_plus_total(Nbands,Nlist))
   allocate(Pspace_minus_total(Nbands,Nlist))
@@ -550,7 +550,7 @@ program ShengBTE
             Naccum_minus=Naccum_minus_array(nn)
 
             if (energy(list(ll),i) /= 0.d0 .and. energy(list(ll),i) .le. omega_max) then
-              call Ind_driver(mm,energy,velocity,eigenvect,Nlist,List,IJK,&
+              call Ind_driver(nn,energy,velocity,eigenvect,Nlist,List,IJK,&
                  N_plus,N_minus,Naccum_plus,Naccum_minus, &
                  Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,&
                  rate_scatt_plus(i,ll),rate_scatt_minus(i,ll),&
@@ -559,16 +559,20 @@ program ShengBTE
         enddo 
         !$OMP END PARALLEL DO
         call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-        call MPI_ALLREDUCE(MPI_IN_PLACE,rate_scatt_plus,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
-             MPI_SUM,MPI_COMM_WORLD,ll)
-        call MPI_ALLREDUCE(MPI_IN_PLACE,rate_scatt_minus,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
-             MPI_SUM,MPI_COMM_WORLD,ll)
         if (myid == 0) then
+          call MPI_REDUCE(MPI_IN_PLACE,rate_scatt_plus,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
+               MPI_SUM,0,MPI_COMM_WORLD,ll)
+          call MPI_REDUCE(MPI_IN_PLACE,rate_scatt_minus,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
+               MPI_SUM,0,MPI_COMM_WORLD,ll)
           call MPI_REDUCE(MPI_IN_PLACE,Pspace_plus_total,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
                MPI_SUM,0,MPI_COMM_WORLD,ll)
           call MPI_REDUCE(MPI_IN_PLACE,Pspace_minus_total,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
                MPI_SUM,0,MPI_COMM_WORLD,ll)
         else
+          call MPI_REDUCE(rate_scatt_plus,rate_scatt_plus,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
+               MPI_SUM,0,MPI_COMM_WORLD,ll)
+          call MPI_REDUCE(rate_scatt_minus,rate_scatt_minus,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
+               MPI_SUM,0,MPI_COMM_WORLD,ll)
           call MPI_REDUCE(Pspace_plus_total,Pspace_plus_total,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
                MPI_SUM,0,MPI_COMM_WORLD,ll)
           call MPI_REDUCE(Pspace_minus_total,Pspace_minus_total,Nbands*Nlist,MPI_DOUBLE_PRECISION,&
@@ -580,6 +584,8 @@ program ShengBTE
              Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,rate_scatt,rate_scatt_plus,&
              rate_scatt_minus,Pspace_plus_total,Pspace_minus_total)
      end if
+
+     call MPI_BCAST(rate_scatt,Nbands*Nlist,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ll)
 
      if(myid.eq.0) then
         open(1,file="BTE.WP3_plus",status="replace")

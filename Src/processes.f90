@@ -33,11 +33,11 @@ module processes
 
 contains
   subroutine calculate_Vp(energy,velocity,eigenvect,Nlist,List,&
-       Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,IJK, maxsize)
+       Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,IJK, plus_size,minus_size)
 
     implicit none
 
-    integer(kind=4),intent(in) :: NList,List(Nlist),IJK(3,nptk),Ntri ,maxsize
+    integer(kind=4),intent(in) :: NList,List(Nlist),IJK(3,nptk),Ntri,plus_size,minus_size
     integer(kind=4),intent(in) :: Index_i(Ntri),Index_j(Ntri),Index_k(Ntri)
     real(kind=8),intent(in) :: energy(nptk,Nbands),velocity(nptk,Nbands,3)
     real(kind=8),intent(in) :: Phi(3,3,3,Ntri),R_j(3,Ntri),R_k(3,Ntri)
@@ -46,7 +46,7 @@ contains
     integer(kind=4) :: q(3),qprime(3),qdprime(3),i,j,k
     integer(kind=4) :: Index_N(0:(Ngrid(1)-1),0:(Ngrid(2)-1),0:(Ngrid(3)-1))
 
-    integer(kind=4) :: ii,jj,kk,ll,ss,mm, step
+    integer(kind=4) :: ii,jj,kk,ll,ss,mm,nn
     integer(kind=4) :: N_plus_count, N_minus_count
     real(kind=8) :: sigma
     real(kind=8) :: omega,omegap,omegadp
@@ -60,26 +60,26 @@ contains
        end do
     end do
 
-    allocate(Vp_plus_matrix(Nbands*NList, maxsize), &
-             Vp_minus_matrix(Nbands*NList, maxsize))
+    allocate(Vp_plus_matrix(plus_size))
+    allocate(Vp_minus_matrix(minus_size))
 
-    Vp_plus_matrix = (0.d0, 0.d0)
-    Vp_minus_matrix = (0.d0, 0.d0)
+    Vp_plus_matrix  = cmplx(0.d0, 0.d0,kind=8)
+    Vp_minus_matrix = cmplx(0.d0, 0.d0,kind=8)
 
     call MPI_BARRIER(MPI_COMM_WORLD,mm)
 
-    !$OMP parallel default(none) shared(mm,myid,numprocs,ngrid,nlist,Nbands,nptk,IJK,rlattvec) &
-    !$OMP & shared(energy,velocity,scalebroad,Vp_minus_matrix,Vp_plus_matrix,list) &
-    !$OMP & shared(Index_N,Index_i,Index_j,Index_k,Phi,R_k,R_j,Ntri,eigenvect,omega_max) &
+    !$OMP parallel default(none) shared(myid,numprocs,ngrid,nlist,Nbands,nstates,nptk,IJK,rlattvec) &
+    !$OMP & shared(energy,velocity,scalebroad,Vp_minus_matrix,Vp_plus_matrix,Naccum_plus_array,Naccum_minus_array) &
+    !$OMP & shared(Index_N,Index_i,Index_j,Index_k,Phi,R_k,R_j,Ntri,eigenvect,omega_max,list) &
     !$OMP & private(i,j,k,ii,jj,kk,ll,q,qprime,qdprime,realqprime,realqdprime,omega,omegap,omegadp) &
-    !$OMP & private(ss,sigma,N_plus_count,N_minus_count,step)
-
-    step = numprocs
+    !$OMP & private(ss,sigma,N_plus_count,N_minus_count,nn,mm)
 
     !$OMP DO schedule(dynamic,1)
-    do mm=myid+1,Nbands*NList,step
-       N_plus_count = 0
-       N_minus_count = 0
+    do nn=1,nstates
+       N_plus_count  = Naccum_plus_array(nn)
+       N_minus_count = Naccum_minus_array(nn)
+       mm=myid*nstates+nn
+       if (mm.gt.nlist*nbands) cycle
          i=modulo(mm-1,Nbands)+1
          ll=int((mm-1)/Nbands)+1
          q=IJK(:,list(ll))
@@ -105,7 +105,7 @@ contains
                               velocity(ss,k,:))
                         if(abs(omega+omegap-omegadp).le.(2.d0*sigma)) then
                            N_plus_count = N_plus_count + 1
-                           Vp_plus_matrix(mm, N_plus_count)=Vp_plus(i,j,k,list(ll),ii,ss,&
+                           Vp_plus_matrix(N_plus_count)=Vp_plus(i,j,k,list(ll),ii,ss,&
                                  realqprime,realqdprime,eigenvect,&
                                  Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k)
                         end if
@@ -123,7 +123,7 @@ contains
                               velocity(ss,k,:))
                         if (abs(omega-omegap-omegadp).le.(2.d0*sigma)) then
                            N_minus_count = N_minus_count + 1
-                           Vp_minus_matrix(mm, N_minus_count)=Vp_minus(i,j,k,list(ll),ii,ss,&
+                           Vp_minus_matrix(N_minus_count)=Vp_minus(i,j,k,list(ll),ii,ss,&
                                  realqprime,realqdprime,eigenvect,&
                                  Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k)
                         end if
@@ -133,18 +133,10 @@ contains
                end do ! ii
             end do  ! j
          end if
-    end do ! mm
+    end do ! nstates
     !$OMP END DO
 
     !$OMP END PARALLEL
-
-    ! always good to have a bar before allreduce
-    call MPI_BARRIER(MPI_COMM_WORLD,ll)
-
-    call MPI_ALLREDUCE(MPI_IN_PLACE,Vp_plus_matrix,Nbands*NList*maxsize,&
-         MPI_DOUBLE_COMPLEX,MPI_SUM,MPI_COMM_WORLD,ll)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,Vp_minus_matrix,Nbands*NList*maxsize,&
-         MPI_DOUBLE_COMPLEX,MPI_SUM,MPI_COMM_WORLD,ll)
   end subroutine calculate_Vp
 
   ! Compute one of the matrix elements involved in the calculation of Ind_plus.
@@ -255,7 +247,7 @@ contains
 
  
   ! Wrapper around Ind_plus and Ind_minus that splits the work among processors.
-  subroutine Ind_driver(mm, energy,velocity,eigenvect,Nlist,List,IJK,N_plus,N_minus, Naccum_plus, Naccum_minus,&
+  subroutine Ind_driver(nn, energy,velocity,eigenvect,Nlist,List,IJK,N_plus,N_minus, Naccum_plus, Naccum_minus,&
        Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,&
        rate_scatt_plus,rate_scatt_minus,WP3_plus,WP3_minus)
     implicit none
@@ -263,7 +255,7 @@ contains
     real(kind=8),intent(in) :: energy(nptk,nbands)
     real(kind=8),intent(in) :: velocity(nptk,nbands,3)
     complex(kind=8),intent(in) :: eigenvect(nptk,Nbands,Nbands)
-    integer(kind=4),intent(in) :: NList,mm
+    integer(kind=4),intent(in) :: NList,nn
     integer(kind=4),intent(in) :: List(Nlist)
     integer(kind=4),intent(in) :: IJK(3,nptk)
     integer(kind=4),intent(in) :: N_plus(Nlist*Nbands),Naccum_plus
@@ -279,7 +271,7 @@ contains
     real(kind=8),intent(out) :: WP3_plus
     real(kind=8),intent(out) :: WP3_minus
 
-    integer(kind=4) :: i
+    integer(kind=4) :: i, mm
     integer(kind=4) :: ll
 
     integer(kind=4) :: q(3),qprime(3),qdprime(3),j,k,N_plus_count,N_minus_count
@@ -302,6 +294,7 @@ contains
 
     N_plus_count=0
     N_minus_count=0
+    mm=myid*nstates+nn
     i=modulo(mm-1,Nbands)+1
     ll=int((mm-1)/Nbands)+1
     q=IJK(:,list(ll))
@@ -330,7 +323,7 @@ contains
                       Indof2ndPhonon_plus(Naccum_plus+N_plus_count)=(ii-1)*Nbands+j
                       Indof3rdPhonon_plus(Naccum_plus+N_plus_count)=(ss-1)*Nbands+k
                       fBEdprime=1.d0/(exp(hbar*omegadp/Kb/T)-1.D0)
-                      Vp=Vp_plus_matrix(mm, N_plus_count) 
+                      Vp=Vp_plus_matrix(Naccum_plus+N_plus_count) 
                       WP3=(fBEprime-fBEdprime)*&
                            exp(-(omega+omegap-omegadp)**2/(sigma**2))/sigma/sqrt(Pi)/&
                            (omega*omegap*omegadp)
@@ -359,7 +352,7 @@ contains
                       Indof2ndPhonon_minus(Naccum_minus+N_minus_count)=(ii-1)*Nbands+j
                       Indof3rdPhonon_minus(Naccum_minus+N_minus_count)=(ss-1)*Nbands+k
                       fBEdprime=1.d0/(exp(hbar*omegadp/Kb/T)-1.D0)
-                      Vp=Vp_minus_matrix(mm, N_minus_count)
+                      Vp=Vp_minus_matrix(Naccum_minus+N_minus_count)
                       WP3=(fBEprime+fBEdprime+1)*&
                            exp(-(omega-omegap-omegadp)**2/(sigma**2))/sigma/sqrt(Pi)/&
                            (omega*omegap*omegadp)
@@ -539,12 +532,12 @@ contains
   end subroutine NP_driver
 
   ! RTA-only version of Ind_plus.
-  subroutine RTA_plus(mm,energy,velocity,eigenvect,Nlist,List,&
+  subroutine RTA_plus(nn,energy,velocity,eigenvect,Nlist,List,&
        Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,IJK,&
        Gamma_plus,WP3_plus)
     implicit none
 
-    integer(kind=4),intent(in) :: mm,NList,List(Nlist),IJK(3,nptk),Ntri
+    integer(kind=4),intent(in) :: nn,NList,List(Nlist),IJK(3,nptk),Ntri
     integer(kind=4),intent(in) :: Index_i(Ntri),Index_j(Ntri),Index_k(Ntri)
     real(kind=8),intent(in) :: energy(nptk,Nbands),velocity(nptk,Nbands,3)
     real(kind=8),intent(in) :: Phi(3,3,3,Ntri),R_j(3,Ntri),R_k(3,Ntri)
@@ -553,7 +546,7 @@ contains
 
     integer(kind=4) :: q(3),qprime(3),qdprime(3),i,j,k
     integer(kind=4) :: Index_N(0:(Ngrid(1)-1),0:(Ngrid(2)-1),0:(Ngrid(3)-1))
-    integer(kind=4) :: ii,jj,kk,ll,ss
+    integer(kind=4) :: ii,jj,kk,ll,ss,mm
     integer(kind=4) :: N_plus_count
     real(kind=8) :: sigma
     real(kind=8) :: fBEprime,fBEdprime
@@ -564,7 +557,7 @@ contains
 
     Gamma_plus=0.d00
     WP3_plus=0.d00
-    N_plus_count = 0
+    N_plus_count = Naccum_plus_array(nn)
     do ii=0,Ngrid(1)-1
        do jj=0,Ngrid(2)-1
           do kk=0,Ngrid(3)-1
@@ -572,6 +565,7 @@ contains
           end do
        end do
     end do
+    mm=myid*nstates+nn
     i=modulo(mm-1,Nbands)+1
     ll=int((mm-1)/Nbands)+1
     q=IJK(:,list(ll))
@@ -602,7 +596,7 @@ contains
                            (omega*omegap*omegadp)
                       WP3_plus=WP3_plus+WP3
                       if (.not.onlyharmonic) then
-                      Vp=Vp_plus_matrix(mm, N_plus_count)
+                      Vp=Vp_plus_matrix(N_plus_count)
                       Gamma_plus=Gamma_plus+hbarp*pi/4.d0*WP3*abs(Vp)**2
                       endif
                    end if
@@ -617,12 +611,12 @@ contains
   end subroutine RTA_plus
 
   ! RTA-only version of Ind_minus.
-  subroutine RTA_minus(mm,energy,velocity,eigenvect,Nlist,List,&
+  subroutine RTA_minus(nn,energy,velocity,eigenvect,Nlist,List,&
        Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,IJK,&
        Gamma_minus,WP3_minus)
     implicit none
 
-    integer(kind=4),intent(in) :: mm,NList,List(Nlist),IJK(3,nptk),Ntri
+    integer(kind=4),intent(in) :: nn,NList,List(Nlist),IJK(3,nptk),Ntri
     integer(kind=4),intent(in) :: Index_i(Ntri),Index_j(Ntri),Index_k(Ntri)
     real(kind=8),intent(in) :: energy(nptk,Nbands),velocity(nptk,Nbands,3)
     real(kind=8),intent(in) :: Phi(3,3,3,Ntri),R_j(3,Ntri),R_k(3,Ntri)
@@ -631,7 +625,7 @@ contains
 
     integer(kind=4) :: q(3),qprime(3),qdprime(3),i,j,k,N_minus_count
     integer(kind=4) :: Index_N(0:(Ngrid(1)-1),0:(Ngrid(2)-1),0:(Ngrid(3)-1))
-    integer(kind=4) :: ii,jj,kk,ll,ss
+    integer(kind=4) :: ii,jj,kk,ll,ss,mm
     real(kind=8) :: sigma
     real(kind=8) :: fBEprime,fBEdprime
     real(kind=8) ::  omega,omegap,omegadp
@@ -648,7 +642,8 @@ contains
           end do
        end do
     end do
-    N_minus_count=0
+    N_minus_count=Naccum_minus_array(nn)
+    mm=myid*nstates+nn
     i=modulo(mm-1,Nbands)+1
     ll=int((mm-1)/Nbands)+1
     q=IJK(:,list(ll))
@@ -679,7 +674,7 @@ contains
                            (omega*omegap*omegadp)
                       WP3_minus=WP3_minus+WP3
                       if (.not.onlyharmonic) then
-                      Vp=Vp_minus_matrix(mm,N_minus_count)
+                      Vp=Vp_minus_matrix(N_minus_count)
                       Gamma_minus=Gamma_minus+hbarp*pi/4.d0*WP3*abs(Vp)**2
                       endif
                    end if
@@ -717,26 +712,29 @@ contains
 
     integer(kind=4) :: i
     integer(kind=4) :: ll
-    integer(kind=4) :: mm
+    integer(kind=4) :: mm, nn
     real(kind=8) :: Gamma_plus,Gamma_minus
 
     rate_scatt=0.d00
     WP3_plus=0.d00
     WP3_minus=0.d00
 
-    !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(Nbands,NList,myid,numprocs,Ntri) &
+    !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(Nbands,NList,myid,nstates,Ntri) &
     !$OMP & shared(energy,velocity,eigenvect,List,IJK,Phi,R_j,R_k,Index_i,Index_j,Index_k,omega_max) &
-    !$OMP & shared(WP3_plus,WP3_minus,rate_scatt_plus,rate_scatt_minus) &
-    !$OMP & private(mm,i,ll,Gamma_plus,Gamma_minus)
-    do mm=myid+1,Nbands*NList,numprocs
+    !$OMP & shared(Naccum_plus_array,Naccum_minus_array,WP3_plus,WP3_minus,rate_scatt_plus,rate_scatt_minus) &
+    !$OMP & private(nn,mm,i,ll,Gamma_plus,Gamma_minus)
+    do nn=1,nstates
+       mm=myid*nstates+nn
+       if (mm.gt.nlist*nbands) cycle
        i=modulo(mm-1,Nbands)+1
        ll=int((mm-1)/Nbands)+1
+
        if (energy(List(ll),i).le.omega_max) then
-          call RTA_plus(mm,energy,velocity,eigenvect,Nlist,List,&
+          call RTA_plus(nn,energy,velocity,eigenvect,Nlist,List,&
                Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,IJK,&
                Gamma_plus,WP3_plus(i,ll))
           rate_scatt_plus(i,ll)=Gamma_plus
-          call RTA_minus(mm,energy,velocity,eigenvect,Nlist,List,&
+          call RTA_minus(nn,energy,velocity,eigenvect,Nlist,List,&
                Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,IJK,&
                Gamma_minus,WP3_minus(i,ll))
           rate_scatt_minus(i,ll)=Gamma_minus*5.D-1
