@@ -22,9 +22,10 @@
 
 module symmetry
   use iso_c_binding
+  use data, only : dp
   implicit none
   ! Tolerance parameter passed to spglib.
-  real(kind=C_DOUBLE),parameter :: symprec=1d-5
+  real(kind=C_DOUBLE),parameter :: symprec=1.0e-5_dp
 
   ! Explicit interfaces to spglib.
   interface
@@ -69,12 +70,12 @@ contains
   ! memory for get_operations().
   function get_num_operations(lattice,natoms,types,positions)
     implicit none
-    real(kind=8),dimension(3,3),intent(in) :: lattice
-    integer(kind=4),intent(in) :: natoms
-    integer(kind=4),dimension(natoms),intent(in) :: types
-    real(kind=8),dimension(3,natoms),intent(in) :: positions
+    real(kind=dp),dimension(3,3),intent(in) :: lattice
+    integer,intent(in) :: natoms
+    integer,dimension(natoms),intent(in) :: types
+    real(kind=dp),dimension(3,natoms),intent(in) :: positions
 
-    integer(kind=4) :: get_num_operations
+    integer :: get_num_operations
 
     ! Notice the explicit C-compatible types used through this module.
     real(kind=C_DOUBLE),dimension(3,3) :: clattice
@@ -100,13 +101,13 @@ contains
   subroutine get_operations(lattice,natoms,types,positions,nops,&
        rotations,translations,international)
     implicit none
-    real(kind=8),dimension(3,3),intent(in) :: lattice
-    integer(kind=4),intent(in) :: natoms
-    integer(kind=4),dimension(natoms),intent(in) :: types
-    real(kind=8),dimension(3,natoms),intent(in) :: positions
-    integer(kind=4),intent(inout) :: nops
-    integer(kind=4),dimension(3,3,nops),intent(out) :: rotations
-    real(kind=8),dimension(3,nops),intent(out) :: translations
+    real(kind=dp),dimension(3,3),intent(in) :: lattice
+    integer,intent(in) :: natoms
+    integer,dimension(natoms),intent(in) :: types
+    real(kind=dp),dimension(3,natoms),intent(in) :: positions
+    integer,intent(inout) :: nops
+    integer,dimension(3,3,nops),intent(out) :: rotations
+    real(kind=dp),dimension(3,nops),intent(out) :: translations
     character(len=10),intent(out) :: international
 
     integer(kind=C_INT) :: i
@@ -146,21 +147,21 @@ contains
   subroutine get_cartesian_operations(lattice,nops,rotations,translations,&
        crotations,ctranslations)
     implicit none
-    real(kind=8),dimension(3,3),intent(in) :: lattice
-    integer(kind=4),intent(in) :: nops
-    integer(kind=4),dimension(3,3,nops),intent(in) :: rotations
-    real(kind=8),dimension(3,nops),intent(in) :: translations
-    real(kind=8),dimension(3,3,nops),intent(out) :: crotations
-    real(kind=8),dimension(3,nops),intent(out) :: ctranslations
+    real(kind=dp),dimension(3,3),intent(in) :: lattice
+    integer,intent(in) :: nops
+    integer,dimension(3,3,nops),intent(in) :: rotations
+    real(kind=dp),dimension(3,nops),intent(in) :: translations
+    real(kind=dp),dimension(3,3,nops),intent(out) :: crotations
+    real(kind=dp),dimension(3,nops),intent(out) :: ctranslations
 
-    integer(kind=4) :: i,info
-    integer(kind=4),dimension(3) :: P
-    real(kind=8),dimension(3,3) :: tmp1,tmp2
+    integer :: i,info
+    integer,dimension(3) :: P
+    real(kind=dp),dimension(3,3) :: tmp1,tmp2
 
     ctranslations=matmul(lattice,translations)
     do i=1,nops
        tmp1=transpose(lattice)
-       tmp2=transpose(matmul(lattice,rotations(:,:,i)))
+       tmp2=transpose(matmul(lattice,real(rotations(:,:,i),kind=dp)))
        ! Rotations transform as tensors: both the lattice-vector matrix
        ! and its inverse are needed. Explicit inversions are avoided.
        call dgesv(3,3,tmp1,3,P,tmp2,3,info)

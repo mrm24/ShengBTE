@@ -33,37 +33,37 @@ contains
   subroutine eigenDM(omega,eigenvect,velocity)
     implicit none
 
-    real(kind=8),intent(out) :: omega(nptk,nbands),velocity(nptk,nbands,3)
-    complex(kind=8),intent(out) :: eigenvect(nptk,Nbands,Nbands)
+    real(kind=dp),intent(out) :: omega(nbands,nptk),velocity(3,nbands,nptk)
+    complex(kind=dp),intent(out) :: eigenvect(Nbands,Nbands,nptk)
 
-    real(kind=8) :: kspace(nptk,3)
-    integer(kind=4) :: indexK,ii,jj,kk
+    real(kind=dp) :: kspace(nptk,3)
+    integer :: indexK,ii,jj,kk
     character(len=1) :: aux
 
     do ii=1,Ngrid(1)        ! rlattvec(:,1) direction
        do jj=1,Ngrid(2)     ! rlattvec(:,2) direction
           do kk=1,Ngrid(3)  ! rlattvec(:,3) direction
              indexK=((kk-1)*Ngrid(2)+(jj-1))*Ngrid(1)+ii
-             kspace(indexK,:)=rlattvec(:,1)*(ii-1.0)/ngrid(1)+&
-                  rlattvec(:,2)*(jj-1.0)/ngrid(2)+&
-                  rlattvec(:,3)*(kk-1.0)/ngrid(3)
+             kspace(indexK,:)=rlattvec(:,1)*(ii-1.0_dp)/real(ngrid(1),kind=dp)+&
+                  rlattvec(:,2)*(jj-1.0_dp)/real(ngrid(2),kind=dp)+&
+                  rlattvec(:,3)*(kk-1.0_dp)/real(ngrid(3),kind=dp)
           end do
        end do
     end do
-    omega=0.
-    velocity=0.
-    eigenvect=0.
-    kk=ceiling(float(nptk)/numprocs)
+    omega=0.0_dp
+    velocity=0.0_dp
+    eigenvect=cmplx(0.0_dp,0.0_dp,kind=dp)
+    kk=ceiling(real(nptk,kind=dp)/real(numprocs,kind=dp))
     ii=min(nptk,kk*myid)+1
     jj=min(nptk,kk*(myid+1))
     ! The routine to be called depends on the input format, selected through a
     ! flag in the CONTROL file.
     if(espresso) then
-       call phonon_espresso(kspace(ii:jj,:),omega(ii:jj,:),&
-            velocity(ii:jj,:,:),eigenvect(ii:jj,:,:))
+       call phonon_espresso(kspace(ii:jj,:),omega(:,ii:jj),&
+            velocity(:,:,ii:jj),eigenvect(:,:,ii:jj))
     else
-       call phonon_phonopy(kspace(ii:jj,:),omega(ii:jj,:),&
-            velocity(ii:jj,:,:),eigenvect(ii:jj,:,:))
+       call phonon_phonopy(kspace(ii:jj,:),omega(:,ii:jj),&
+            velocity(:,:,ii:jj),eigenvect(:,:,ii:jj))
     end if
     call MPI_ALLREDUCE(MPI_IN_PLACE,omega,nptk*nbands,MPI_DOUBLE_PRECISION,&
          MPI_SUM,MPI_COMM_WORLD,kk)
@@ -74,8 +74,7 @@ contains
     ! Make sure that group velocities have the right symmetry at each q point.
     ! This solves the problem of undefined components for degenerate modes.
     do ii=1,nptk
-       velocity(ii,:,:)=transpose(&
-            matmul(symmetrizers(:,:,ii),transpose(velocity(ii,:,:))))
+       velocity(:,:,ii)=matmul(symmetrizers(:,:,ii),velocity(:,:,ii))
     end do
     ! Make sure that acoustic frequencies and group velocities at Gamma
     ! are exactly zero.
@@ -84,43 +83,43 @@ contains
        write(*,*) "Info: original values:"
        do ii=1,3
           write(aux,"(I1)") ii
-          write(*,*) "Info: omega(1,"//aux//") =",omega(1,ii),"rad/ps"
+          write(*,*) "Info: omega(1,"//aux//") =",omega(ii,1),"rad/ps"
        end do
     end if
-    omega(1,1:3)=0.d0
-    velocity(1,1:3,:)=0.
+    omega(1:3,1)=0.0_dp
+    velocity(:,1:3,1)=0.0_dp
   end subroutine eigenDM
 
   ! Compute phonon dispersions, Phonopy style.
   subroutine phonon_phonopy(kpoints,omegas,velocities,eigenvect)
     implicit none
 
-    real(kind=8),intent(in) :: kpoints(:,:)
-    real(kind=8),intent(out) :: omegas(:,:),velocities(:,:,:)
-    complex(kind=8),intent(out),optional :: eigenvect(:,:,:)
+    real(kind=dp),intent(in) :: kpoints(:,:)
+    real(kind=dp),intent(out) :: omegas(:,:),velocities(:,:,:)
+    complex(kind=dp),intent(out),optional :: eigenvect(:,:,:)
 
-    real(kind=8),parameter :: prefactor=1745.91429109 ! THz^2 * amu * nm^3
+    real(kind=dp),parameter :: prefactor=1745.91429109_dp ! THz^2 * amu * nm^3
 
-    integer(kind=4) :: nk
-    real(kind=8),allocatable :: mm(:,:)
-    complex(kind=8),allocatable :: dyn_total(:,:),dyn_nac(:,:)
-    complex(kind=8),allocatable :: ddyn_total(:,:,:),ddyn_nac(:,:,:)
-    real(kind=8),allocatable :: fc_short(:,:,:,:,:,:,:)
-    real(kind=8),allocatable :: fc_diel(:,:,:,:,:,:,:)
-    real(kind=8),allocatable :: fc_total(:,:,:,:,:,:,:)
+    integer :: nk
+    real(kind=dp),allocatable :: mm(:,:)
+    complex(kind=dp),allocatable :: dyn_total(:,:),dyn_nac(:,:)
+    complex(kind=dp),allocatable :: ddyn_total(:,:,:),ddyn_nac(:,:,:)
+    real(kind=dp),allocatable :: fc_short(:,:,:,:,:,:,:)
+    real(kind=dp),allocatable :: fc_diel(:,:,:,:,:,:,:)
+    real(kind=dp),allocatable :: fc_total(:,:,:,:,:,:,:)
 
-    integer(kind=4) :: i,j,ip,ik,neq
-    integer(kind=4) :: ix1,iy1,iz1,iatom1,ix2,iy2,iz2,iatom2
-    real(kind=8) :: tmp1,tmp2,tmp3,dmin,Rnorm
-    real(kind=8) :: rcell(3),r(3),rl(3),rr(3,27),qr(27)
-    complex(kind=8) :: ztmp,star
+    integer :: i,j,ip,ik,neq
+    integer :: ix1,iy1,iz1,iatom1,ix2,iy2,iz2,iatom2
+    real(kind=dp) :: tmp1,tmp2,tmp3,dmin,Rnorm
+    real(kind=dp) :: rcell(3),r(3),rl(3),rr(3,27),qr(27)
+    complex(kind=dp) :: ztmp,star
 
-    real(kind=8), allocatable :: shortest(:,:)
-    real(kind=8), allocatable :: omega2(:),rwork(:)
-    complex(kind=8), allocatable :: work(:)
-    integer(kind=4) :: nwork=1
+    real(kind=dp), allocatable :: shortest(:,:)
+    real(kind=dp), allocatable :: omega2(:),rwork(:)
+    complex(kind=dp), allocatable :: work(:)
+    integer :: nwork=1
 
-    real(kind=8) :: dnrm2
+    real(kind=dp) :: dnrm2
 
     nk=size(kpoints,1)
 
@@ -170,15 +169,15 @@ contains
     end do
 
     do ik=1,nk
-       dyn_total=0.
-       dyn_nac=0.
-       ddyn_total=0.
-       ddyn_nac=0.
-       fc_diel=0.
+       dyn_total=0.0_dp
+       dyn_nac=0.0_dp
+       ddyn_total=0.0_dp
+       ddyn_nac=0.0_dp
+       fc_diel=0.0_dp
        ! If the nonanalytic flag is set to TRUE, add the electrostatic
        ! correction. No correction is applied exactly at \Gamma in
        ! order not to rely on guesses about directions.
-       if(nonanalytic.and..not.all(shortest(:,ik).eq.0.)) then
+       if(nonanalytic.and..not.all(shortest(:,ik).eq.0.0_dp)) then
           tmp3=dot_product(shortest(:,ik),matmul(epsilon,shortest(:,ik)))
           do iatom1=1,natoms
              do iatom2=1,natoms
@@ -194,7 +193,7 @@ contains
                       do ip=1,3
                          ddyn_nac(3*(iatom1-1)+i,3*(iatom2-1)+j,ip)=&
                               tmp1*born(ip,j,iatom2)+tmp2*born(ip,i,iatom1)-&
-                              2.*tmp1*tmp2*dot_product(epsilon(ip,:),shortest(:,ik))/tmp3
+                              2.0_dp*tmp1*tmp2*dot_product(epsilon(ip,:),shortest(:,ik))/tmp3
                       end do
                       ddyn_nac(3*(iatom1-1)+i,3*(iatom2-1)+j,:)=&
                            ddyn_nac(3*(iatom1-1)+i,3*(iatom2-1)+j,:)/&
@@ -237,7 +236,7 @@ contains
                                rl=ix2*scell(1)*lattvec(:,1)+iy2*scell(2)*lattvec(:,2)+&
                                     iz2*scell(3)*lattvec(:,3)
                                Rnorm=dnrm2(3,rl+r,1)
-                               if(abs(Rnorm-dmin).gt.1e-5) then
+                               if(abs(Rnorm-dmin).gt.1.0e-5_dp) then
                                   if(Rnorm.lt.dmin) then
                                      neq=1
                                      dmin=Rnorm
@@ -252,9 +251,9 @@ contains
                             end do
                          end do
                       end do
-                      star=0.
+                      star=cmplx(0.0_dp,0.0_dp,kind=dp)
                       do ip=1,neq
-                         ztmp=phexp(-qr(ip))/neq
+                         ztmp=phexp(-qr(ip))/real(neq,kind=dp)
                          star=star+ztmp
                          do i=1,3
                             do j=1,3
@@ -273,7 +272,7 @@ contains
                                ddyn_total(3*(iatom1-1)+i,3*(iatom2-1)+j,:)=&
                                     ddyn_total(3*(iatom1-1)+i,3*(iatom2-1)+j,:)+&
                                     star*ddyn_nac(3*(iatom1-1)+i,3*(iatom2-1)+j,:)/&
-                                    (scell(1)*scell(2)*scell(3))
+                                    real((scell(1)*scell(2)*scell(3)),kind=dp)
                             end do
                          end do
                       end if
@@ -297,20 +296,20 @@ contains
 
        ! Eigenvectors are also returned if required.
        if(present(eigenvect)) then
-          eigenvect(ik,:,:)=transpose(dyn_total)
+          eigenvect(:,:,ik)=dyn_total
        end if
 
        ! As is conventional, imaginary frequencies are returned as negative.
-       omegas(ik,:)=sign(sqrt(abs(omega2)),omega2)
+       omegas(:,ik)=sign(sqrt(abs(omega2)),omega2)
 
        ! Group velocities are obtained perturbatively. This is very
        ! advatageous with respect to finite differences.
        do i=1,nbands
           do ip=1,3
-             velocities(ik,i,ip)=real(dot_product(dyn_total(:,i),&
+             velocities(ip,i,ik)=real(dot_product(dyn_total(:,i),&
                   matmul(ddyn_total(:,:,ip),dyn_total(:,i))))
           end do
-          velocities(ik,i,:)=velocities(ik,i,:)/(2.*omegas(ik,i))
+          velocities(:,i,ik)=velocities(:,i,ik)/(2.0_dp*omegas(i,ik))
        end do
     end do
     deallocate(mm,omega2,rwork,fc_short,fc_diel,fc_total,&
@@ -320,34 +319,35 @@ contains
   ! Adapted from the code of Quantum Espresso (
   ! http://www.quantum-espresso.org/ ), licensed under the GPL.
   subroutine phonon_espresso(kpoints,omegas,velocities,eigenvect)
+    use iso_fortran_env, only : int64
     implicit none
 
-    real(kind=8),intent(in) :: kpoints(:,:)
-    real(kind=8),intent(out) :: omegas(:,:),velocities(:,:,:)
-    complex(kind=8),optional,intent(out) :: eigenvect(:,:,:)
+    real(kind=dp),intent(in) :: kpoints(:,:)
+    real(kind=dp),intent(out) :: omegas(:,:),velocities(:,:,:)
+    complex(kind=dp),optional,intent(out) :: eigenvect(:,:,:)
 
     ! QE's 2nd-order files are in Ryd units.
-    real(kind=8),parameter :: bohr2nm=0.052917721092,toTHz=20670.687,&
-         massfactor=1.8218779*6.022e-4
+    real(kind=dp),parameter :: bohr2nm=0.052917721092_dp,toTHz=20670.687_dp,&
+         massfactor=1.8218779_dp*6.022e-4_dp
 
-    integer(kind=4) :: ir,nreq,ntype,nat,ibrav,qscell(3)
-    integer(kind=4) :: i,j,ipol,jpol,iat,jat,idim,jdim,t1,t2,t3,m1,m2,m3,ik
-    integer(kind=4) :: ndim,nk,nwork,ncell_g(3)
-    integer(kind=8),allocatable :: tipo(:)
+    integer :: ir,nreq,ntype,nat,ibrav,qscell(3)
+    integer :: i,j,ipol,jpol,iat,jat,idim,jdim,t1,t2,t3,m1,m2,m3,ik
+    integer :: ndim,nk,nwork,ncell_g(3)
+    integer(kind=int64),allocatable :: tipo(:)
     character(len=1) :: polar_key
     character(len=5),allocatable :: label(:)
-    real(kind=8) :: weight,total_weight,exp_g,ck
-    real(kind=8) :: celldm(6),r_ws(3),rws(124,0:3),wscell(3,0:3),at(3,3)
-    real(kind=8) :: alpha,geg,gmax,kt,gr,volume_r,dnrm2
-    real(kind=8) :: cell_r(1:3,0:3),cell_g(1:3,0:3)
-    real(kind=8) :: zig(3),zjg(3),dgeg(3),t(0:3),g(0:3),g_old(0:3)
-    real(kind=8), allocatable :: omega2(:),rwork(:)
-    real(kind=8),allocatable :: k(:,:),mass(:),r(:,:),eps(:,:),mm(:,:),rr(:,:,:)
-    real(kind=8),allocatable :: eival(:,:),vels(:,:,:),zeff(:,:,:),fc_s(:,:,:,:,:,:,:)
-    complex(kind=8) :: auxi(3)
-    complex(kind=8),allocatable :: cauxiliar(:),eigenvectors(:,:),work(:)
-    complex(kind=8),allocatable :: dyn(:,:),dyn_s(:,:,:),dyn_g(:,:,:)
-    complex(kind=8),allocatable :: ddyn(:,:,:),ddyn_s(:,:,:,:),ddyn_g(:,:,:,:)
+    real(kind=dp) :: weight,total_weight,exp_g,ck
+    real(kind=dp) :: celldm(6),r_ws(3),rws(124,0:3),wscell(3,0:3),at(3,3)
+    real(kind=dp) :: alpha,geg,gmax,kt,gr,volume_r,dnrm2
+    real(kind=dp) :: cell_r(1:3,0:3),cell_g(1:3,0:3)
+    real(kind=dp) :: zig(3),zjg(3),dgeg(3),t(0:3),g(0:3),g_old(0:3)
+    real(kind=dp), allocatable :: omega2(:),rwork(:)
+    real(kind=dp), allocatable :: k(:,:),mass(:),r(:,:),eps(:,:),mm(:,:),rr(:,:,:)
+    real(kind=dp), allocatable :: eival(:,:),vels(:,:,:),zeff(:,:,:),fc_s(:,:,:,:,:,:,:)
+    complex(kind=dp) :: auxi(3)
+    complex(kind=dp),allocatable :: cauxiliar(:),eigenvectors(:,:),work(:)
+    complex(kind=dp),allocatable :: dyn(:,:),dyn_s(:,:,:),dyn_g(:,:,:)
+    complex(kind=dp),allocatable :: ddyn(:,:,:),ddyn_s(:,:,:,:),ddyn_g(:,:,:,:)
 
     ! Quantum Espresso's 2nd-order format contains information about
     ! lattice vectors, atomic positions, Born effective charges and so
@@ -462,7 +462,7 @@ contains
              do i=1,3
                 rws(j,i)=wscell(1,i)*m1+wscell(2,i)*m2+wscell(3,i)*m3
              end do
-             rws(j,0)=0.5*dot_product(rws(j,1:3),rws(j,1:3))
+             rws(j,0)=0.5_dp*dot_product(rws(j,1:3),rws(j,1:3))
              j=j+1
           end do
        end do
@@ -470,7 +470,7 @@ contains
 
     do i=1,nat
        mm(i,i)=mass(tipo(i))
-       rr(i,i,:)=0
+       rr(i,i,:)=0.0_dp
        do j=i+1,nat
           mm(i,j)=sqrt(mass(tipo(i))*mass(tipo(j)))
           rr(i,j,1:3)=r(i,1:3)-r(j,1:3)
@@ -479,9 +479,9 @@ contains
        end do
     end do
 
-    gmax=14.
-    alpha=(2.*pi/celldm(1))**2
-    geg=gmax*4.*alpha
+    gmax=14.0_dp
+    alpha=(2.0_dp*pi/celldm(1))**2
+    geg=gmax*4.0_dp*alpha
     ! Estimate of nrx1,nrx2,nrx3 generating all vectors up to G^2 < geg
     ! Only for dimensions where periodicity is present, e.g. if nr1=1
     ! and nr2=1, then the G-vectors run along nr3 only.
@@ -502,12 +502,12 @@ contains
       ncell_g(3) = int ( sqrt (geg) / cell_g(3,0) ) + 1
     ENDIF
 
-    dyn_s=0.
-    ddyn_s=0.
+    dyn_s=0.0_dp
+    ddyn_s=0.0_dp
 
     do iat=1,nat
        do jat=1,nat
-          total_weight=0.0d0
+          total_weight=0.0_dp
           do m1=-2*scell(1),2*scell(1)
              do m2=-2*scell(2),2*scell(2)
                 do m3=-2*scell(3),2*scell(3)
@@ -515,33 +515,33 @@ contains
                       t(i)=m1*cell_r(1,i)+m2*cell_r(2,i)+m3*cell_r(3,i)
                       r_ws(i)=t(i)+rr(iat,jat,i)
                    end do
-                   weight=0.d0
+                   weight=0.0_dp
                    nreq=1
                    j=0
                    Do ir=1,124
                       ck=dot_product(r_ws,rws(ir,1:3))-rws(ir,0)
-                      if(ck.gt.1e-6) then
+                      if(ck .gt. 1.0e-6_dp) then
                          j=1
                          cycle
                       end if
-                      if(abs(ck).lt.1e-6) then
+                      if(abs(ck) .lt. 1.0e-6_dp) then
                          nreq=nreq+1
                       end if
                    end do
-                   if(j.eq.0) then
-                      weight=1.d0/dble(nreq)
+                   if(j .eq. 0) then
+                      weight=1.0_dp/real(nreq,kind=dp)
                    end if
-                   if(weight.gt.0.d0) then
+                   if(weight.gt.0.0_dp) then
                       t1=mod(m1+1,scell(1))
-                      if(t1.le.0) then
+                      if(t1 .le. 0) then
                          t1=t1+scell(1)
                       end if
                       t2=mod(m2+1,scell(2))
-                      if(t2.Le.0) then
+                      if(t2 .Le. 0) then
                          t2=t2+scell(2)
                       end if
                       t3=mod(m3+1,scell(3))
-                      if(t3.le.0) then
+                      if(t3 .le. 0) then
                          t3=t3+scell(3)
                       end if
                       do ik=1,nk
@@ -570,8 +570,8 @@ contains
     ! The nonanalytic correction has two components in this
     ! approximation. Results may differ slightly between this method
     ! and the one implemented in the previous subroutine.
-    dyn_g=0.
-    ddyn_g=0.
+    dyn_g=0.0_dp
+    ddyn_g=0.0_dp
     if(nonanalytic) then
        do m1=-ncell_g(1),ncell_g(1)
           do m2=-ncell_g(2),ncell_g(2)
@@ -579,11 +579,11 @@ contains
                 g(1:3)=m1*cell_g(1,1:3)+&
                      m2*cell_g(2,1:3)+m3*cell_g(3,1:3)
                 geg=dot_product(g(1:3),matmul(eps,g(1:3)))
-                if(geg.gt.0.0d0.and.geg/alpha/4.0d0.lt.gmax) then
-                   exp_g=exp(-geg/alpha/4.0d0)/geg
+                if(geg.gt.0.0_dp.and.geg/alpha/4.0_dp.lt.gmax) then
+                   exp_g=exp(-geg/alpha/4.0_dp)/geg
                    do iat=1,nat
                       zig(1:3)=matmul(g(1:3),zeff(iat,1:3,1:3))
-                      auxi(1:3)=0.
+                      auxi(1:3)=0.0_dp
                       do jat=1,nat
                          gr=dot_product(g(1:3),rr(iat,jat,1:3))
                          zjg(1:3)=matmul(g(1:3),zeff(jat,1:3,1:3))
@@ -603,8 +603,8 @@ contains
                 do ik=1,nk
                    g(1:3)=g_old(1:3)+k(ik,1:3)
                    geg=dot_product(g(1:3),matmul(eps,g(1:3)))
-                   if (geg.gt.0.0d0.and.geg/alpha/4.0d0.lt.gmax) then
-                      exp_g=exp(-geg/alpha/4.0d0)/geg
+                   if (geg.gt.0.0_dp.and.geg/alpha/4.0_dp.lt.gmax) then
+                      exp_g=exp(-geg/alpha/4.0_dp)/geg
                       dgeg=matmul(eps+transpose(eps),g(1:3))
                       do iat=1,nat
                          zig(1:3)=matmul(g(1:3),zeff(iat,1:3,1:3))
@@ -622,7 +622,7 @@ contains
                                           exp_g*phexp(gr)*&
                                           (zjg(jpol)*zeff(iat,i,ipol)+zig(ipol)*zeff(jat,i,jpol)+&
                                           zig(ipol)*zjg(jpol)*iunit*rr(iat,jat,i)-&
-                                          zig(ipol)*zjg(jpol)*(dgeg(i)/alpha/4.0+dgeg(i)/geg))
+                                          zig(ipol)*zjg(jpol)*(dgeg(i)/alpha/4.0_dp+dgeg(i)/geg))
                                   end do
                                end do
                             end do
@@ -633,8 +633,8 @@ contains
              end do
           end do
        end do
-       dyn_g=dyn_g*8.*pi/volume_r
-       ddyn_g=ddyn_g*8.*pi/volume_r
+       dyn_g=dyn_g*8.0_dp*pi/volume_r
+       ddyn_g=ddyn_g*8.0_dp*pi/volume_r
     end if
     ! Once the dynamical matrix has been built, the frequencies and
     ! group velocities are extracted exactly like in the previous
@@ -657,24 +657,24 @@ contains
 
        call zheev("V","U",nbands,dyn(:,:),nbands,omega2,work,-1,rwork,i)
        if(real(work(1)).gt.nwork) then
-          nwork=nint(2*real(work(1)))
+          nwork=nint(2.0_dp*real(work(1),kind=dp))
           deallocate(work)
           allocate(work(nwork))
        end if
        call zheev("V","U",nbands,dyn(:,:),nbands,omega2,work,nwork,rwork,i)
 
        if(present(eigenvect)) then
-          eigenvect(ik,:,:)=transpose(dyn(:,:))
+          eigenvect(:,:,ik)=dyn(:,:)
        end if
 
-       omegas(ik,:)=sign(sqrt(abs(omega2)),omega2)
+       omegas(:,ik)=sign(sqrt(abs(omega2)),omega2)
 
        do i=1,nbands
           do j=1,3
-             velocities(ik,i,j)=real(dot_product(dyn(:,i),&
+             velocities(j,i,ik)=real(dot_product(dyn(:,i),&
                   matmul(ddyn(:,:,j),dyn(:,i))))
           end do
-          velocities(ik,i,:)=velocities(ik,i,:)/(2.*omegas(ik,i))
+          velocities(:,i,ik)=velocities(:,i,ik)/(2.0_dp*omegas(i,ik))
        end do
     end do
     ! Return the result to the units used in the rest of ShengBTE.

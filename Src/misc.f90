@@ -22,6 +22,7 @@
 module misc
   use iso_fortran_env
   use iso_c_binding
+  use data, only : dp
   implicit none
 
   ! Create a directory (interface to the system's mkdir).
@@ -46,10 +47,10 @@ contains
 
   ! 3D cross product.
   subroutine cross_product(a,b,res)
-    real(kind=8),intent(in) :: a(3),b(3)
-    real(kind=8),intent(out) :: res(3)
+    real(kind=dp),intent(in) :: a(3),b(3)
+    real(kind=dp),intent(out) :: res(3)
 
-    integer(kind=4) :: i,j,k
+    integer :: i,j,k
 
     do i=1,3
        j=mod(i,3)+1
@@ -62,8 +63,8 @@ contains
   subroutine divmod(a,b,q,r)
     implicit none
 
-    integer(kind=4),intent(in) :: a,b
-    integer(kind=4),intent(out) :: q,r
+    integer,intent(in) :: a,b
+    integer,intent(out) :: q,r
 
     q=a/b
     r=mod(a,b)
@@ -73,12 +74,12 @@ contains
   function twonorm3x3(a)
     implicit none
 
-    real(kind=8),intent(in) :: a(3,3)
+    real(kind=dp),intent(in) :: a(3,3)
 
-    real(kind=8) :: twonorm3x3
+    real(kind=dp) :: twonorm3x3
 
-    integer(kind=4) :: info,iwork(24)
-    real(kind=8) :: b(3,3),S(3),work(100)
+    integer :: info,iwork(24)
+    real(kind=dp) :: b(3,3),S(3),work(100)
 
     b=a
     call dgesdd("N",3,3,b,3,S,b,3,b,3,work,100,iwork,info)
@@ -90,20 +91,20 @@ contains
   function phexp(x)
     implicit none
 
-    real(kind=8),intent(in) :: x
-    complex(kind=8) :: phexp
+    real(kind=dp),intent(in) :: x
+    complex(kind=dp) :: phexp
 
-    phexp=cmplx(cos(x),sin(x),kind=8)
+    phexp=cmplx(cos(x),sin(x),kind=dp)
   end function phexp
 
   ! Create a directory with permissions set to 0777.
   subroutine create_directory(path,result)
     implicit none
     character(kind=c_char,len=1),intent(in) :: path(*)
-    integer(kind=4),intent(out),optional :: result
+    integer,intent(out),optional :: result
 
-    integer(kind=4) :: tmp
-    tmp=int(mkdir(path, int(o"777",c_int16_t)),4)
+    integer :: tmp
+    tmp=int(mkdir(path, int(o"777",c_int16_t)))
     if (present(result)) then
        result = tmp
     end if
@@ -113,10 +114,10 @@ contains
   subroutine change_directory(path,result)
     implicit none
     character(kind=c_char,len=1),intent(in) :: path(*)
-    integer(kind=4),intent(out),optional :: result
+    integer,intent(out),optional :: result
 
-    integer(kind=4) :: tmp
-    tmp=int(syschdir(path),4)
+    integer :: tmp
+    tmp=int(syschdir(path))
     if (present(result)) then
        result = tmp
     end if
