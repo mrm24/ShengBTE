@@ -411,8 +411,7 @@ program ShengBTE
         path="T"//trim(adjustl(aux2))//"K"
         call change_directory(trim(adjustl(path))//C_NULL_CHAR)
      endif
-     call RTA_driver(energy,velocity,eigenvect,Nlist,List,IJK,&
-          Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,rate_scatt,&
+     call RTA_driver(energy,velocity,Nlist,List,IJK,rate_scatt,&
           rate_scatt_plus,rate_scatt_minus,Pspace_plus_total,Pspace_minus_total)
      if(myid.eq.0) then
         open(1,file="BTE.WP3_plus",status="replace")
@@ -536,7 +535,7 @@ program ShengBTE
 
      if(convergence) then
         !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(nstates,myid,Nbands,nlist) &
-        !$OMP & shared(energy,velocity,eigenvect,IJK,list,Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,omega_max) &
+        !$OMP & shared(energy,velocity,IJK,list,omega_max) &
         !$OMP & shared(N_plus,Naccum_plus_array,Gamma_plus,rate_scatt_plus,Pspace_plus_total) &
         !$OMP & shared(N_minus,Naccum_minus_array,Gamma_minus,rate_scatt_minus,Pspace_minus_total) &
         !$OMP & private(i,ll,mm,nn,Naccum_plus,Naccum_minus)
@@ -551,9 +550,8 @@ program ShengBTE
             Naccum_minus=Naccum_minus_array(nn)
 
             if (energy(i,list(ll)) /= 0.0_dp .and. energy(i,list(ll)) .le. omega_max) then
-              call Ind_driver(nn,energy,velocity,eigenvect,Nlist,List,IJK,&
+              call Ind_driver(nn,energy,velocity,Nlist,List,IJK,&
                  N_plus,N_minus,Naccum_plus,Naccum_minus, &
-                 Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,&
                  rate_scatt_plus(i,ll),rate_scatt_minus(i,ll),&
                  Pspace_plus_total(i,ll),Pspace_minus_total(i,ll))
             end if
@@ -581,8 +579,7 @@ program ShengBTE
         end if
         rate_scatt=rate_scatt_plus+rate_scatt_minus
      else
-        call RTA_driver(energy,velocity,eigenvect,Nlist,List,IJK,&
-             Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,rate_scatt,rate_scatt_plus,&
+        call RTA_driver(energy,velocity,Nlist,List,IJK,rate_scatt,rate_scatt_plus,&
              rate_scatt_minus,Pspace_plus_total,Pspace_minus_total)
      end if
 

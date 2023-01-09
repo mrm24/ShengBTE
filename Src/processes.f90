@@ -248,9 +248,8 @@ contains
 
  
   ! Wrapper around Ind_plus and Ind_minus that splits the work among processors.
-  subroutine Ind_driver(nn, energy,velocity,eigenvect,Nlist,List,IJK,N_plus,N_minus, Naccum_plus, Naccum_minus,&
-       Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,&
-       rate_scatt_plus,rate_scatt_minus,WP3_plus,WP3_minus)
+  subroutine Ind_driver(nn, energy,velocity,Nlist,List,IJK,N_plus,N_minus, Naccum_plus, Naccum_minus,&
+        rate_scatt_plus,rate_scatt_minus,WP3_plus,WP3_minus)
     implicit none
 
     real(kind=dp),intent(in) :: energy(nbands,nptk)
@@ -260,13 +259,6 @@ contains
     integer,intent(in) :: IJK(3,nptk)
     integer,intent(in) :: N_plus(Nlist*Nbands),Naccum_plus
     integer,intent(in) :: N_minus(Nlist*Nbands),Naccum_minus
-    integer,intent(in) :: Ntri
-    real(kind=dp),intent(in) :: Phi(3,3,3,Ntri)
-    real(kind=dp),intent(in) :: R_j(3,Ntri)
-    real(kind=dp),intent(in) :: R_k(3,Ntri)
-    integer,intent(in) :: Index_i(Ntri)
-    integer,intent(in) :: Index_j(Ntri)
-    integer,intent(in) :: Index_k(Ntri)
     real(kind=dp),intent(out) :: rate_scatt_plus,rate_scatt_minus
     real(kind=dp),intent(out) :: WP3_plus
     real(kind=dp),intent(out) :: WP3_minus
@@ -670,8 +662,8 @@ contains
   end subroutine RTA_minus
 
   ! Wrapper around RTA_plus and RTA_minus that splits the work among processors.
-  subroutine RTA_driver(energy,velocity,eigenvect,Nlist,List,IJK,&
-       Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k,rate_scatt,rate_scatt_plus,rate_scatt_minus,WP3_plus,WP3_minus)
+  subroutine RTA_driver(energy,velocity,Nlist,List,IJK,&
+       rate_scatt,rate_scatt_plus,rate_scatt_minus,WP3_plus,WP3_minus)
     implicit none
 
     real(kind=dp),intent(in) :: energy(nbands,nptk)
@@ -679,13 +671,6 @@ contains
     integer,intent(in) :: NList
     integer,intent(in) :: List(Nlist)
     integer,intent(in) :: IJK(3,nptk)
-    integer,intent(in) :: Ntri
-    real(kind=dp),intent(in) :: Phi(3,3,3,Ntri)
-    real(kind=dp),intent(in) :: R_j(3,Ntri)
-    real(kind=dp),intent(in) :: R_k(3,Ntri)
-    integer,intent(in) :: Index_i(Ntri)
-    integer,intent(in) :: Index_j(Ntri)
-    integer,intent(in) :: Index_k(Ntri)
     real(kind=dp),intent(out) :: rate_scatt(Nbands,Nlist),rate_scatt_plus(Nbands,Nlist),rate_scatt_minus(Nbands,Nlist)
     real(kind=dp),intent(out) :: WP3_plus(Nbands,Nlist)
     real(kind=dp),intent(out) :: WP3_minus(Nbands,Nlist)

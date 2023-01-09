@@ -343,9 +343,9 @@ contains
     real(kind=dp) :: zig(3),zjg(3),dgeg(3),t(0:3),g(0:3),g_old(0:3)
     real(kind=dp), allocatable :: omega2(:),rwork(:)
     real(kind=dp), allocatable :: k(:,:),mass(:),r(:,:),eps(:,:),mm(:,:),rr(:,:,:)
-    real(kind=dp), allocatable :: eival(:,:),vels(:,:,:),zeff(:,:,:),fc_s(:,:,:,:,:,:,:)
+    real(kind=dp), allocatable :: zeff(:,:,:),fc_s(:,:,:,:,:,:,:)
     complex(kind=dp) :: auxi(3)
-    complex(kind=dp),allocatable :: cauxiliar(:),eigenvectors(:,:),work(:)
+    complex(kind=dp),allocatable :: cauxiliar(:),work(:)
     complex(kind=dp),allocatable :: dyn(:,:),dyn_s(:,:,:),dyn_g(:,:,:)
     complex(kind=dp),allocatable :: ddyn(:,:,:),ddyn_s(:,:,:,:),ddyn_g(:,:,:,:)
 
@@ -384,9 +384,6 @@ contains
     allocate(ddyn(ndim,ndim,3))
     allocate(ddyn_s(nk,ndim,ndim,3))
     allocate(ddyn_g(nk,ndim,ndim,3))
-    allocate(eival(ndim,nk))
-    allocate(vels(ndim,nk,3))
-    allocate(eigenvectors(ndim,ndim))
     allocate(cauxiliar(ndim))
 
     do i=1,ntype
@@ -696,9 +693,6 @@ contains
     deallocate(ddyn)
     deallocate(ddyn_s)
     deallocate(ddyn_g)
-    deallocate(eival)
-    deallocate(vels)
-    deallocate(eigenvectors)
     deallocate(cauxiliar)
     deallocate(work)
     deallocate(rwork)
