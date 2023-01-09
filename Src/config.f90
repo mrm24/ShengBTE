@@ -49,6 +49,10 @@ module config
   real(kind=dp) :: cgrid,V,rV,rlattvec(3,3),slattvec(3,3)
   real(kind=dp),allocatable :: cartesian(:,:),uorientations(:,:)
 
+  ! Factor common to all 3 phonon processes 1/sqrt(M_i*M_j*M_k)
+  real(kind=dp),allocatable :: inv_root_mmm(:,:,:)
+
+  ! symmetry
   integer                   :: nsymm,nsymm_rot
   integer,      allocatable :: rotations(:,:,:)
   integer,      allocatable :: rotations_orig(:,:,:)
@@ -150,7 +154,7 @@ contains
     maxiter=1000
     nticks=100
     eps=1e-5_dp
-    omega_max=1.0e100_dp
+    omega_max=1.0e30_dp
     read(1,nml=parameters)
     if ((T.le.0.0_dp).and.(T_min.le.0.0_dp)) then
        if(myid.eq.0)write(error_unit,*) "Error: T must be >0 K"
@@ -223,6 +227,15 @@ contains
        end do
        call data_free_isotopes()
     end if
+
+    allocate(inv_root_mmm(nelements,nelements,nelements))
+    do i = 1, nelements
+      do j = 1, nelements
+        do k = 1, nelements
+          inv_root_mmm(k,j,i) = 1.0_dp/sqrt(masses(k)*masses(j)*masses(i))
+        end do
+      end do
+    end do
 
     ! Find out the symmetries of the system.
     nsymm=get_num_operations(lattvec,natoms,types,positions)
@@ -335,7 +348,7 @@ contains
   ! Free the memory used by all config structures.
   subroutine free_config()
     deallocate(elements,types,positions,masses,gfactors,born,cartesian,&
-         rotations,crotations,qrotations,symmetrizers)
+         rotations,crotations,qrotations,symmetrizers,inv_root_mmm)
     if(nanowires) then
        deallocate(orientations,uorientations)
     end if

@@ -110,11 +110,12 @@ contains
                   omegap=energy(j,ii)
                   if (omegap .eq. 0.0_dp) cycle
                   eigenvect_j = eigenvect(:,j,ii)
+                  vel_j = velocity(:,j,ii)
                   do k=1,Nbands
                      !--------BEGIN absorption process-----------!
                      omegadp=energy(k,ss_p)
                      if (omegadp .ne. 0.0_dp) then
-                        sigma=scalebroad*base_sigma(velocity(:,j,ii)-velocity(:,k,ss_p))
+                        sigma=scalebroad*base_sigma(vel_j(:)-velocity(:,k,ss_p))
                         if(abs(omega+omegap-omegadp).le.(2.0_dp*sigma)) then
                            eigenvect_k =  eigenvect(:,k,ss_p)
                            N_plus_count = N_plus_count + 1
@@ -127,7 +128,7 @@ contains
                      !--------BEGIN emission process-------------!
                      omegadp=energy(k,ss_m)
                      if (omegadp .ne. 0.0_dp) then
-                        sigma=scalebroad*base_sigma(velocity(:,j,ii)-velocity(:,k,ss_m))
+                        sigma=scalebroad*base_sigma(vel_j(:)-velocity(:,k,ss_m))
                         if (abs(omega-omegap-omegadp).le.(2.0_dp*sigma)) then
                            eigenvect_k =  eigenvect(:,k,ss_m)
                            N_minus_count = N_minus_count + 1
@@ -173,22 +174,26 @@ contains
     integer :: tt
     complex(kind=dp) :: prefactor
     complex(kind=dp) :: Vp0,Vp_plus_c
+    complex(kind=dp) :: factor1,factor2
+    complex(kind=dp), dimension(3) :: vect_i, vect_j, vect_k
 
     Vp_plus_c= cmplx(0.0_dp,0.0_dp,kind=dp)
     
     do ll=1,Ntri
-       prefactor=1.0_dp/sqrt(masses(types(Index_i(ll)))*&
-            masses(types(Index_j(ll)))*masses(types(Index_k(ll))))*&
-            phexp(dot_product(realqprime,R_j(:,ll)))*&
-            phexp(-dot_product(realqdprime,R_k(:,ll)))
+       prefactor=inv_root_mmm(Index_i(ll),Index_j(ll),Index_k(ll))*&
+            phexp(dot_product(realqprime,R_j(:,ll))-dot_product(realqdprime,R_k(:,ll)))
        Vp0=cmplx(0.0_dp,0.0_dp,kind=dp)
+
+       vect_i = eigenvect_i(3*(Index_i(ll)-1)+1:3*(Index_i(ll)))
+       vect_j = eigenvect_j(3*(Index_j(ll)-1)+1:3*(Index_j(ll)))
+       vect_k = conjg(eigenvect_k(3*(Index_k(ll)-1)+1:3*(Index_k(ll))))
+
        do rr=1,3
+          factor1 = vect_k(rr)
           do ss=1,3
+             factor2 =  factor1*vect_j(ss)
              do tt=1,3
-                Vp0=Vp0+Phi(tt,ss,rr,ll)*&
-                     eigenvect_i(3*(Index_i(ll)-1)+tt)*&
-                     eigenvect_j(3*(Index_j(ll)-1)+ss)*&
-                     conjg(eigenvect_k(3*(Index_k(ll)-1)+rr))
+                Vp0=Vp0+Phi(tt,ss,rr,ll)*vect_i(tt)*factor2
              end do
           end do
        end do
@@ -221,22 +226,26 @@ contains
     integer :: tt
     complex(kind=dp) :: prefactor
     complex(kind=dp) :: Vp0, Vp_minus_c
+    complex(kind=dp) :: factor1,factor2
+    complex(kind=dp), dimension(3) :: vect_i, vect_j, vect_k
 
     Vp_minus_c=cmplx(0.0_dp,0.0_dp,kind=dp)
 
     do ll=1,Ntri
-       prefactor=1.0_dp/sqrt(masses(types(Index_i(ll)))*&
-            masses(types(Index_j(ll)))*masses(types(Index_k(ll))))*&
-            phexp(-dot_product(realqprime,R_j(:,ll)))*&
-            phexp(-dot_product(realqdprime,R_k(:,ll)))
+       prefactor=inv_root_mmm(types(Index_i(ll)),types(Index_j(ll)),types(Index_k(ll)))*&
+            phexp(-dot_product(realqprime,R_j(:,ll))-dot_product(realqdprime,R_k(:,ll)))
        Vp0=cmplx(0.0_dp,0.0_dp,kind=dp)
+
+       vect_i = eigenvect_i(3*(Index_i(ll)-1)+1:3*(Index_i(ll)))
+       vect_j = conjg(eigenvect_j(3*(Index_j(ll)-1)+1:3*(Index_j(ll))))
+       vect_k = conjg(eigenvect_k(3*(Index_k(ll)-1)+1:3*(Index_k(ll))))
+
        do rr=1,3
+          factor1 = vect_k(rr)
           do ss=1,3
+             factor2 =  factor1*vect_j(ss)
              do tt=1,3
-                Vp0=Vp0+Phi(tt,ss,rr,ll)*&
-                     eigenvect_i(3*(Index_i(ll)-1)+tt)*&
-                     conjg(eigenvect_j(3*(Index_j(ll)-1)+ss))*&
-                     conjg(eigenvect_k(3*(Index_k(ll)-1)+rr))
+                Vp0=Vp0+Phi(tt,ss,rr,ll)*vect_i(tt)*factor2
              end do
           end do
        end do
