@@ -80,7 +80,7 @@ program ShengBTE
 
   real(kind=dp) :: dnrm2
 
-  call MPI_INIT(ierr)
+  call MPI_INIT_thread(MPI_THREAD_FUNNELED,i,ierr)
   call MPI_COMM_RANK(MPI_COMM_WORLD,myid,ierr)
   call MPI_COMM_SIZE(MPI_COMM_WORLD,numprocs,ierr)
 
@@ -583,7 +583,11 @@ program ShengBTE
              rate_scatt_minus,Pspace_plus_total,Pspace_minus_total)
      end if
 
-     call MPI_BCAST(rate_scatt,Nbands*Nlist,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ll)
+     ! Passing in rate_scatt rather than rate_scatt(1,1) in some MPI implementations
+     ! can result in rate_scatt being shifted from 
+     !    rate_scatt(1:nbands,1:nptk) -> rate_scatt(0:nbands-1,0:nptk-1)
+     ! this results in all sorts memory shenanigans which is best avoided.
+     call MPI_BCAST(rate_scatt(1,1),Nbands*Nlist,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ll)
 
      if(myid.eq.0) then
         open(1,file="BTE.WP3_plus",status="replace")
@@ -614,8 +618,8 @@ program ShengBTE
         open(1,file="BTE.w_anharmonic",status="replace")
         open(2,file="BTE.w_anharmonic_plus",status="replace")
         open(3,file="BTE.w_anharmonic_minus",status="replace")
-        do ll=1,Nlist
-           do i=1,Nbands
+        do i=1,Nbands
+           do ll=1,Nlist
               write(1,"(2E20.10)") energy(i,list(ll)),rate_scatt(i,ll)
               write(2,"(2E20.10)") energy(i,list(ll)),rate_scatt_plus(i,ll)
               write(3,"(2E20.10)") energy(i,list(ll)),rate_scatt_minus(i,ll)
