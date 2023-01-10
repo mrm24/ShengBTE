@@ -43,7 +43,7 @@ contains
 
     integer :: ik,ii,jj,kk,iband,itri,ialpha,ibeta
     real(kind=dp) :: kspace(nptk,3)
-    complex(kind=dp) :: factor1,factor2,factor3,g(nbands)
+    complex(kind=dp) :: factor1,factor2,factor3,g
 
     do ii=1,Ngrid(1)
        do jj=1,Ngrid(2)
@@ -56,12 +56,12 @@ contains
        end do
     end do    
     !$OMP PARALLEL DO default(none) collapse(2) schedule(static) &
-    !$OMP & shared(nptk,nbands,Ntri,kspace,g,grun,omega,Phi,types,cartesian) &
+    !$OMP & shared(nptk,nbands,Ntri,kspace,grun,omega,Phi,types,cartesian) &
     !$OMP & shared(Index_i,Index_j,Index_k,eigenvect,masses,R_k,R_j) &
-    !$OMP & private(ik,iband,itri,ialpha,ibeta,factor1,factor2,factor3)
+    !$OMP & private(ik,iband,itri,ialpha,ibeta,factor1,factor2,factor3,g)
     do ik=1,nptk
        do iband=1,nbands
-          g(iband)=0.0_dp
+          g=0.0_dp
           do itri=1,Ntri
              factor1=phexp(dot_product(kspace(ik,:),R_j(:,itri)))/&
                   sqrt(masses(types(Index_i(itri)))*&
@@ -72,18 +72,18 @@ contains
                 do ibeta=1,3
                    factor3=factor2*eigenvect(3*(Index_j(itri)-1)+ibeta,& 
                                              iband,ik)
-                   g(iband)=g(iband)+factor3*dot_product(&
+                   g=g+factor3*dot_product(&
                         Phi(ialpha,ibeta,:,itri),&
                         (cartesian(:,Index_k(itri))+R_k(:,itri)))
                 end do
              end do
           end do
-       if (omega(iband,ik).eq.0.0_dp) then
-          grun(iband,ik)=0.0_dp
-       else
-          g(iband)=-unitfactor*g(iband)/6.0_dp/omega(iband,ik)**2
-          grun(iband,ik)=real(g(iband))
-       endif
+         if (omega(iband,ik).eq.0.0_dp) then
+            grun(iband,ik)=0.0_dp
+         else
+            g=-unitfactor*g/6.0_dp/omega(iband,ik)**2
+            grun(iband,ik)=real(g)
+         endif
        end do
     end do
     !$OMP END PARALLEL DO
