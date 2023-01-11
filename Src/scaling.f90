@@ -33,16 +33,16 @@ contains
   subroutine ScalingOfTau(Nlist,Nequi,ALLEquiList,velocity_z,&
        velocity,tauzero_wedge,radnw,ffunc)
     implicit none
-    integer(kind=4),intent(in) :: Nlist,Nequi(nptk),ALLEquiList(Nsymm_rot,nptk)
-    real(kind=8),intent(in) :: velocity(nptk,Nbands,3),velocity_z(nptk,Nbands)
-    real(kind=8),intent(in) :: tauzero_wedge(Nbands,Nlist),radnw
-    real(kind=8),intent(out) :: ffunc(nptk,Nbands)
+    integer,intent(in) :: Nlist,Nequi(nptk),ALLEquiList(Nsymm_rot,nptk)
+    real(kind=dp),intent(in) :: velocity(3,Nbands,nptk),velocity_z(Nbands,nptk)
+    real(kind=dp),intent(in) :: tauzero_wedge(Nbands,Nlist),radnw
+    real(kind=dp),intent(out) :: ffunc(Nbands,nptk)
 
-    real(kind=8) :: vrho,xsum,tauint,vmod,vaxial,tauzero(Nbands,nptk)
-    integer(kind=4),parameter :: nsum=500
-    integer(kind=4) :: iisum,ii,jj
+    real(kind=dp) :: vrho,xsum,tauint,vmod,vaxial,tauzero(Nbands,nptk)
+    integer,parameter :: nsum=500
+    integer :: iisum,ii,jj
 
-    real(kind=8) :: dnrm2
+    real(kind=dp) :: dnrm2
 
     do ii=1,Nlist
       do jj=1,Nequi(ii)
@@ -50,26 +50,30 @@ contains
        end do
     end do
 
-    ffunc=0.d0
+    ffunc=0.0_dp
+    !$OMP PARALLEL DO default(none) collapse(2) schedule(static) &
+    !$OMP & shared(nptk,nbands,T,tauzero,ffunc,radnw,cgrid,velocity,velocity_z) &
+    !$OMP & private(jj,ii,vrho,vmod,tauint,vaxial,xsum)
     do ii=1,nptk
        do jj=1,Nbands
-          vmod=dnrm2(3,velocity(ii,jj,:),1)
+          vmod=dnrm2(3,velocity(:,jj,ii),1)
           tauint=abs(tauzero(jj,ii))
-          vaxial=velocity_z(ii,jj)
-          if ((vmod**2-vaxial**2).le.vaxial**2*1.0d-8) then
-             vaxial=vaxial*2.d0*sqrt(dble(cgrid**2))/sqrt(4.d0*(cgrid**2)+1.d0)
+          vaxial=velocity_z(jj,ii)
+          if ((vmod**2-vaxial**2).le.vaxial**2*1.0e-8_dp) then
+             vaxial=vaxial*2.0_dp*cgrid/sqrt(4.0_dp*(cgrid**2)+1.0_dp)
           end if
           vrho=tauint*sqrt(vmod**2-vaxial**2)
-          if ((vrho.ne.0.)) then
-             ffunc(ii,jj)=0.0d0
+          if ((vrho /= 0.0_dp)) then
+             ffunc(jj,ii)=0.0_dp
              do iisum=1,nsum
-                xsum=dfloat(iisum)*radnw/dfloat(nsum)
-                ffunc(ii,jj)=ffunc(ii,jj)+2.0d0*sqrt(abs(radnw**2-xsum**2))/vrho-&
-                     1.0d0+exp(-2.0d0*dsqrt(abs(radnw**2-xsum**2))/vrho)
+                xsum=real(iisum,kind=dp)*radnw/real(nsum,kind=dp)
+                ffunc(jj,ii)=ffunc(jj,ii)+2.0_dp*sqrt(abs(radnw**2-xsum**2))/vrho-&
+                     1.0_dp+exp(-2.0_dp*sqrt(abs(radnw**2-xsum**2))/vrho)
              end do
-             ffunc(ii,jj)=(vrho*2.0d0/(pi*radnw*nsum))*ffunc(ii,jj)
+             ffunc(jj,ii)=(vrho*2.0_dp/(pi*radnw*real(nsum,kind=dp)))*ffunc(jj,ii)
           end if
        end do
     end do
+    !$OMP END PARALLEL DO
   end subroutine ScalingOfTau
 end module scaling

@@ -27,57 +27,66 @@ module config
   use mpi_f08
   implicit none
 
-  integer(kind=4) :: nelements,natoms,ngrid(3),norientations
+  integer :: nelements,natoms,ngrid(3),norientations
   namelist /allocations/ nelements,natoms,ngrid,norientations
-  real(kind=8) :: lfactor,lattvec(3,3),epsilon(3,3)
+  real(kind=dp) :: lfactor,lattvec(3,3),epsilon(3,3)
   character(len=3),allocatable :: elements(:)
-  integer(kind=4),allocatable :: types(:),orientations(:,:)
-  integer(kind=4) :: scell(3)
-  real(kind=8),allocatable :: positions(:,:),masses(:),gfactors(:),born(:,:,:)
+  integer,allocatable :: types(:),orientations(:,:)
+  integer :: scell(3)
+  real(kind=dp),allocatable :: positions(:,:),masses(:),gfactors(:),born(:,:,:)
   namelist /crystal/ lfactor,lattvec,elements,types,positions,masses,gfactors,&
        epsilon,born,scell,orientations
-  integer(kind=4) :: maxiter,nticks
-  real(kind=8) :: T,scalebroad,rmin,rmax,dr,eps
-  real(kind=8) :: T_min,T_max,T_step,omega_max
+  integer       :: maxiter,nticks
+  real(kind=dp) :: T,scalebroad,rmin,rmax,dr,eps
+  real(kind=dp) :: T_min,T_max,T_step,omega_max
   namelist /parameters/ T,scalebroad,rmin,rmax,dr,maxiter,nticks,eps,&
            T_min,T_max,T_step,omega_max
   logical :: nonanalytic,convergence,isotopes,autoisotopes,nanowires,onlyharmonic,espresso
   namelist /flags/ nonanalytic,convergence,isotopes,autoisotopes,&
-       nanowires,onlyharmonic,espresso
+       nanowires,onlyharmonic,espresso,nthreads
 
-  integer(kind=4) :: nbands,nptk,nwires
-  real(kind=8) :: cgrid,V,rV,rlattvec(3,3),slattvec(3,3)
-  real(kind=8),allocatable :: cartesian(:,:),uorientations(:,:)
+  integer       :: nbands,nptk,nwires
+  real(kind=dp) :: cgrid,V,rV,rlattvec(3,3),slattvec(3,3)
+  real(kind=dp),allocatable :: cartesian(:,:),uorientations(:,:)
 
-  integer(kind=4) :: nsymm,nsymm_rot
-  integer(kind=4),allocatable :: rotations(:,:,:)
-  integer(kind=4),allocatable :: rotations_orig(:,:,:)
-  real(kind=8),allocatable :: crotations(:,:,:),qrotations(:,:,:)
-  real(kind=8),allocatable :: crotations_orig(:,:,:)
-  real(kind=8),allocatable :: qrotations_orig(:,:,:)
-  real(kind=8),allocatable :: symmetrizers(:,:,:)
-  character(len=10) :: international
+  ! Factor common to all 3 phonon processes 1/sqrt(M_i*M_j*M_k)
+  real(kind=dp),allocatable :: inv_root_mmm(:,:,:)
+
+  ! symmetry
+  integer                   :: nsymm,nsymm_rot
+  integer,      allocatable :: rotations(:,:,:)
+  integer,      allocatable :: rotations_orig(:,:,:)
+  real(kind=dp),allocatable :: crotations(:,:,:),qrotations(:,:,:)
+  real(kind=dp),allocatable :: crotations_orig(:,:,:)
+  real(kind=dp),allocatable :: qrotations_orig(:,:,:)
+  real(kind=dp),allocatable :: symmetrizers(:,:,:)
+  character(len=10)         :: international
   ! Vp matrix
-  complex(kind=8),allocatable :: Vp_plus_matrix(:,:), Vp_minus_matrix(:,:)
+  real(kind=dp),allocatable :: Vp_plus_matrix(:), Vp_minus_matrix(:)
   ! Ind
-  integer(kind=4),allocatable :: Indof2ndPhonon_plus(:),Indof3rdPhonon_plus(:)
-  integer(kind=4),allocatable :: Indof2ndPhonon_minus(:),Indof3rdPhonon_minus(:)
-  real(kind=8),allocatable :: Gamma_plus(:),Gamma_minus(:)
+  integer,      allocatable :: Indof2ndPhonon_plus(:),Indof3rdPhonon_plus(:)
+  integer,      allocatable :: Indof2ndPhonon_minus(:),Indof3rdPhonon_minus(:)
+  real(kind=dp),allocatable :: Gamma_plus(:),Gamma_minus(:)
+  ! Index of Vp, Ind*, Gamma arrays for a particular state on this mpi process
+  integer,allocatable :: Naccum_plus_array(:),Naccum_minus_array(:)
   ! MPI variables, assigned in ShengBTE.f90.
-  integer(kind=4) :: myid,numprocs,nstates
+  integer :: myid,numprocs,nstates
+  ! Number of threads requested by user
+  ! Later overwritten to number of threads systems allows
+  integer :: nthreads
 
 contains
 
   subroutine read_config()
     implicit none
 
-    integer(kind=4) :: i,j,k,ii,jj,kk,ll,info,ierr
-    integer(kind=4) :: P(3)
-    integer(kind=4),allocatable :: rtmp(:,:,:),ID_equi(:,:)
+    integer :: i,j,k,ii,jj,kk,ll,info,ierr
+    integer :: P(3)
+    integer,allocatable :: rtmp(:,:,:),ID_equi(:,:)
     logical,allocatable :: valid(:)
-    real(kind=8) :: dnrm2,tmp1(3,3),tmp2(3,3),tmp3(3,3)
-    real(kind=8),allocatable :: crtmp(:,:,:),qrtmp(:,:,:)
-    real(kind=8),allocatable :: translations(:,:),ctranslations(:,:)
+    real(kind=dp) :: dnrm2,tmp1(3,3),tmp2(3,3),tmp3(3,3)
+    real(kind=dp),allocatable :: crtmp(:,:,:),qrtmp(:,:,:)
+    real(kind=dp),allocatable :: translations(:,:),ctranslations(:,:)
 
     ! Set the defaults and read the namelist.
     nelements=0
@@ -109,14 +118,14 @@ contains
        allocate(uorientations(3,norientations))
        orientations=0
     end if
-    lfactor=1.
+    lfactor=1.0_dp
     scell=-1
-    epsilon=0.
-    epsilon(1,1)=1.
-    epsilon(2,2)=1.
-    epsilon(3,3)=1.
-    born=0.
-    gfactors=0.
+    epsilon=0.0_dp
+    epsilon(1,1)=1.0_dp
+    epsilon(2,2)=1.0_dp
+    epsilon(3,3)=1.0_dp
+    born=0.0_dp
+    gfactors=0.0_dp
     types=0
     read(1,nml=crystal)
     if(.not.all(scell.gt.0)) then
@@ -136,27 +145,27 @@ contains
           call MPI_FINALIZE(ierr)
        end if
     end do
-    T=0
-    T_min=0
-    scalebroad=1.0
-    rmin=5.0
-    rmax=505.0
-    dr=100.0
+    T=0.0_dp
+    T_min=0.0_dp
+    scalebroad=1.0_dp
+    rmin=5.0_dp
+    rmax=505.0_dp
+    dr=100.0_dp
     maxiter=1000
     nticks=100
-    eps=1e-5
-    omega_max=1.d100
+    eps=1e-5_dp
+    omega_max=1.0e30_dp
     read(1,nml=parameters)
-    if ((T.le.0.).and.(T_min.le.0)) then
+    if ((T.le.0.0_dp).and.(T_min.le.0.0_dp)) then
        if(myid.eq.0)write(error_unit,*) "Error: T must be >0 K"
        call MPI_BARRIER(MPI_COMM_WORLD,ierr)
        call MPI_FINALIZE(ierr)
-    elseif (T.gt.0) then 
-    T_min=T
-    T_max=T
-    T_step=T
+    elseif (T.gt.0.0_dp) then 
+      T_min=T
+      T_max=T
+      T_step=T
     end if
-    if(rmin.le.0.or.rmax.le.rmin.or.dr.le.0) then
+    if(rmin.le.0.0_dp.or.rmax.le.rmin.or.dr.le.0.0_dp) then
        if(myid.eq.0)write(error_unit,*) "Error: rmin and dr must be >0, and rmax must be > rmin"
        call MPI_BARRIER(MPI_COMM_WORLD,ierr)
        call MPI_FINALIZE(ierr)
@@ -173,6 +182,7 @@ contains
     nanowires=.false.
     onlyharmonic=.false.
     espresso=.false.
+    nthreads=1
     read(1,nml=flags)
     if(nanowires.and.norientations.eq.0) then
        if(myid.eq.0)write(error_unit,*) "Error: nanowires=.TRUE. but norientations=0"
@@ -182,7 +192,7 @@ contains
     close(1)
 
     nptk=product(ngrid)
-    cgrid=nptk**(1./3.)
+    cgrid=real(nptk,kind=dp)**(1.0_dp/3.0_dp)
     nbands=3*natoms
     nwires=ceiling((rmax-rmin)/dr)
 
@@ -195,13 +205,13 @@ contains
     end do
 
     V=abs(dot_product(lattvec(:,1),rlattvec(:,1)))
-    rV=2.*pi/V
+    rV=2.0_dp*pi/V
     rlattvec=rV*rlattvec
 
     cartesian=matmul(lattvec,positions)
 
     if(nanowires) then
-       uorientations=matmul(lattvec,orientations)
+       uorientations=matmul(lattvec,real(orientations,kind=dp))
        do i=1,norientations
           uorientations(:,i)=uorientations(:,i)/&
                dnrm2(3,uorientations(:,i),1)
@@ -217,6 +227,15 @@ contains
        end do
        call data_free_isotopes()
     end if
+
+    allocate(inv_root_mmm(nelements,nelements,nelements))
+    do i = 1, nelements
+      do j = 1, nelements
+        do k = 1, nelements
+          inv_root_mmm(k,j,i) = 1.0_dp/sqrt(masses(k)*masses(j)*masses(i))
+        end do
+      end do
+    end do
 
     ! Find out the symmetries of the system.
     nsymm=get_num_operations(lattvec,natoms,types,positions)
@@ -259,7 +278,7 @@ contains
     call symmetry_map_notransl(ID_equi)
     ! Create the "symmetrizers", linear operators that extract the
     ! component of a vector compatible with the symmetries at each q point.
-    symmetrizers=0
+    symmetrizers=0.0_dp
     do ii=1,nptk
        kk=0
        do jj=1,nsymm_rot
@@ -270,7 +289,7 @@ contains
           end if
        end do
        if(kk.gt.1) then
-          symmetrizers(:,:,ii)=symmetrizers(:,:,ii)/kk
+          symmetrizers(:,:,ii)=symmetrizers(:,:,ii)/real(kk,kind=dp)
        end if
     end do
     ! Find rotations that are either duplicated or incompatible with
@@ -329,7 +348,7 @@ contains
   ! Free the memory used by all config structures.
   subroutine free_config()
     deallocate(elements,types,positions,masses,gfactors,born,cartesian,&
-         rotations,crotations,qrotations,symmetrizers)
+         rotations,crotations,qrotations,symmetrizers,inv_root_mmm)
     if(nanowires) then
        deallocate(orientations,uorientations)
     end if
@@ -340,24 +359,24 @@ contains
   ! performed in lattice coordinates.
   subroutine symm(r_in,r_out)
     implicit none
-    integer(kind=4),intent(in) :: r_in(3)
-    real(kind=8),intent(out) :: r_out(3,nsymm_rot)
+    integer,intent(in) :: r_in(3)
+    real(kind=dp),intent(out) :: r_out(3,nsymm_rot)
 
-    integer(kind=4) :: ii
+    integer :: ii
 
     do ii=1,nsymm_rot
-       r_out(:,ii)=ngrid*matmul(qrotations(:,:,ii),dble(r_in)/ngrid)
+       r_out(:,ii)=real(ngrid,kind=dp)*matmul(qrotations(:,:,ii),real(r_in,kind=dp)/real(ngrid,kind=dp))
     end do
   end subroutine symm
 
   ! Find the equivalences among points.
   subroutine symmetry_map(ID_equi)
     implicit none
-    integer(kind=4),intent(out) :: ID_equi(nsymm_rot,nptk)
+    integer,intent(out) :: ID_equi(nsymm_rot,nptk)
 
-    integer(kind=4) :: Ind_cell(3,nptk)
-    integer(kind=4) :: i,isym,ivec(3)
-    real(kind=8) :: vec(3),vec_symm(3,nsymm_rot),dnrm2
+    integer :: Ind_cell(3,nptk)
+    integer :: i,isym,ivec(3)
+    real(kind=dp) :: vec(3),vec_symm(3,nsymm_rot),dnrm2
 
     call Id2Ind(Ind_cell)
     do i=1,nptk
@@ -365,7 +384,7 @@ contains
        do isym=1,nsymm_rot
           vec=vec_symm(:,isym)
           ivec=nint(vec)
-          if(dnrm2(3,abs(vec-dble(ivec)),1).gt.1e-2) then
+          if(dnrm2(3,abs(vec-real(ivec,kind=dp)),1).gt.1.0e-2_dp) then
              ID_equi(isym,i)=-1
           else
              ID_equi(isym,i)=Ind2Id(modulo(ivec,ngrid))
@@ -377,11 +396,11 @@ contains
   ! Find symmetry operations excluding translations that can bring q to itself.
   subroutine symmetry_map_notransl(ID_equi)
     implicit none
-    integer(kind=4),intent(out) :: ID_equi(nsymm_rot,nptk)
+    integer,intent(out) :: ID_equi(nsymm_rot,nptk)
 
-    integer(kind=4) :: Ind_cell(3,nptk)
-    integer(kind=4) :: i,isym,ivec(3)
-    real(kind=8) :: vec(3),vec_symm(3,nsymm_rot),dnrm2
+    integer :: Ind_cell(3,nptk)
+    integer :: i,isym,ivec(3)
+    real(kind=dp) :: vec(3),vec_symm(3,nsymm_rot),dnrm2
 
     call Id2Ind(Ind_cell)
     do i=1,nptk
@@ -389,7 +408,7 @@ contains
        do isym=1,nsymm_rot
           vec=vec_symm(:,isym)
           ivec=nint(vec)
-          if(dnrm2(3,abs(dble(Ind_cell(:,i))-dble(vec)),1).le.1e-5) then
+          if(dnrm2(3,abs(real(Ind_cell(:,i),kind=dp)-vec),1).le.1.0e-5_dp) then
              ID_equi(isym,i)=i
           else
              ID_equi(isym,i)=-1
@@ -401,9 +420,9 @@ contains
   ! Create a table that can be used to demultiplex cell indices.
   subroutine Id2ind(Ind_cell)
     implicit none
-    integer(kind=4),intent(out) :: Ind_cell(3,nptk)
+    integer,intent(out) :: Ind_cell(3,nptk)
 
-    integer(kind=4) :: ii,tmp1
+    integer :: ii,tmp1
 
     do ii=1,nptk
        call divmod(ii-1,Ngrid(1),tmp1,Ind_cell(1,ii))
@@ -414,9 +433,9 @@ contains
   ! Multiplex three cell indices into one.
   function Ind2Id(Ind_cell)
     implicit none
-    integer(kind=4),intent(in) :: Ind_cell(3)
+    integer,intent(in) :: Ind_cell(3)
 
-    integer(kind=4) :: Ind2Id
+    integer :: Ind2Id
 
     Ind2Id=1+Ind_cell(1)+(Ind_cell(2)+Ind_cell(3)*Ngrid(2))*Ngrid(1)
   end function Ind2Id
@@ -424,18 +443,18 @@ contains
   ! Return the base broadening (without prefactor) for a mode.
   function base_sigma(v)
     implicit none
-    real(kind=8),intent(in) :: v(3)
+    real(kind=dp),intent(in) :: v(3)
 
-    real(kind=8) :: base_sigma
+    real(kind=dp) :: base_sigma
 
-    integer(kind=4) :: nu
+    integer :: nu
 
-    base_sigma=0.
+    base_sigma=0.0_dp
     do nu=1,3
-       base_sigma=base_sigma+(dot_product(rlattvec(:,nu),v)/ngrid(nu))**2
+       base_sigma=base_sigma+(dot_product(rlattvec(:,nu),v)/real(ngrid(nu),kind=dp))**2
     end do
 
-    base_sigma=sqrt(base_sigma/6.)
+    base_sigma=sqrt(base_sigma/6.0_dp)
   end function base_sigma
 
   
@@ -443,17 +462,17 @@ contains
   subroutine symmetrize_tensor(tensor)
     implicit none
 
-    real(kind=8),intent(inout) :: tensor(3,3)
+    real(kind=dp),intent(inout) :: tensor(3,3)
 
-    integer(kind=4) :: isym
-    real(kind=8) :: tmp(3,3)
+    integer :: isym
+    real(kind=dp) :: tmp(3,3)
 
-    tmp = 0.
+    tmp = 0.0_dp
     do isym=1,nsymm_rot
        tmp = tmp + matmul(crotations(:,:,isym),&
             matmul(tensor,transpose(crotations(:,:,isym))))
     end do
 
-    tensor=tmp/nsymm_rot
+    tensor=tmp/real(nsymm_rot,kind=dp)
   end subroutine symmetrize_tensor
 end module config

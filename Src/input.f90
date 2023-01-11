@@ -22,6 +22,7 @@
 module input
   use iso_fortran_env
   use config
+  use data, only : dp
   use mpi_f08
   implicit none
 
@@ -29,7 +30,7 @@ module input
   ! This is especially relevant is the format needs to be changed.
   character(len=*),parameter :: filename_2fc="FORCE_CONSTANTS_2ND"
   character(len=*),parameter :: filename_3fc="FORCE_CONSTANTS_3RD"
-  real(kind=8),parameter :: unitfactor=9648.53336213 ! from eV/(A^2*amu) to THz^2
+  real(kind=dp),parameter :: unitfactor=9648.53336213_dp ! from eV/(A^2*amu) to THz^2
 
 contains
 
@@ -37,11 +38,11 @@ contains
   subroutine read2fc(fc)
     implicit none
 
-    real(kind=8),allocatable,intent(out) :: fc(:,:,:,:,:,:,:)
+    real(kind=dp),allocatable,intent(out) :: fc(:,:,:,:,:,:,:)
     
-    integer(kind=4) :: ntot,atom1,atom2,i,j,ip,ierr
-    integer(kind=4) :: ix1,iy1,iz1,ix2,iy2,iz2,iatom1,iatom2
-    real(kind=8) :: mm(natoms,natoms)
+    integer :: ntot,atom1,atom2,i,j,ip,ierr
+    integer :: ix1,iy1,iz1,ix2,iy2,iz2,iatom1,iatom2
+    real(kind=dp) :: mm(natoms,natoms)
 
     do i=1,natoms
        mm(i,i)=masses(types(i))
@@ -100,10 +101,10 @@ contains
   subroutine split_index(index,nx,ny,nz,ix,iy,iz,iatom)
     implicit none
 
-    integer(kind=4),intent(in) :: index,nx,ny,nz
-    integer(kind=4),intent(out) :: ix,iy,iz,iatom
+    integer,intent(in) :: index,nx,ny,nz
+    integer,intent(out) :: ix,iy,iz,iatom
 
-    integer(kind=4) :: tmp1,tmp2
+    integer :: tmp1,tmp2
 
     call divmod(index-1,nx,tmp1,ix)
     call divmod(tmp1,ny,tmp2,iy)
@@ -118,12 +119,12 @@ contains
   ! Read FORCE_CONSTANTS_3RD.
   subroutine read3fc(Ntri,Phi,R_j,R_k,Index_i,Index_j,Index_k)
     implicit none
-    integer(kind=4),intent(out) :: Ntri
-    integer(kind=4),allocatable,intent(out) :: Index_i(:),Index_j(:),Index_k(:)
-    real(kind=8),allocatable,intent(out) :: Phi(:,:,:,:),R_j(:,:),R_k(:,:)
+    integer,intent(out) :: Ntri
+    integer,allocatable,intent(out) :: Index_i(:),Index_j(:),Index_k(:)
+    real(kind=dp),allocatable,intent(out) :: Phi(:,:,:,:),R_j(:,:),R_k(:,:)
 
-    real(kind=8) :: tmp(3,3)
-    integer(kind=4) :: ii,jj,ll,mm,nn,ltem,mtem,ntem,info,P(3)
+    real(kind=dp) :: tmp(3,3)
+    integer :: ii,jj,ll,mm,nn,ltem,mtem,ntem,info,P(3)
 
     ! The file is in a simple sparse format, described in detail in
     ! the user documentation. See Doc/ShengBTE.pdf.
@@ -148,9 +149,9 @@ contains
     ! Each vector is rounded to the nearest lattice vector.
     tmp=lattvec
     call dgesv(3,Ntri,tmp,3,P,R_j,3,info)
-    R_j=matmul(lattvec,anint(R_j/10.))
+    R_j=matmul(lattvec,anint(R_j/10.0_dp,kind=dp))
     tmp=lattvec
     call dgesv(3,Ntri,tmp,3,P,R_k,3,info)
-    R_k=matmul(lattvec,anint(R_k/10.))
+    R_k=matmul(lattvec,anint(R_k/10.0_dp,kind=dp))
   end subroutine read3fc
 end module input

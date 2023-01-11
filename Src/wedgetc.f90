@@ -41,12 +41,12 @@ contains
   subroutine wedge(Nlist,Nequi,List,ALLEquiList,TypeofSymmetry)
     implicit none
 
-    integer(kind=4),intent(out) :: Nlist,Nequi(nptk),List(nptk)
-    integer(kind=4),intent(out) :: ALLEquiList(Nsymm_rot,nptk),TypeofSymmetry(Nsymm_rot,nptk)
+    integer,intent(out) :: Nlist,Nequi(nptk),List(nptk)
+    integer,intent(out) :: ALLEquiList(Nsymm_rot,nptk),TypeofSymmetry(Nsymm_rot,nptk)
 
-    integer(kind=4) :: ID_equi(Nsymm_rot,nptk),ii,ll,Ntot,ierr
+    integer :: ID_equi(Nsymm_rot,nptk),ii,ll,Ntot,ierr
 
-    integer(kind=4) :: NAllList,AllList(nptk),EquiList(Nsymm_rot)
+    integer :: NAllList,AllList(nptk),EquiList(Nsymm_rot)
 
     call symmetry_map(ID_equi)
 
