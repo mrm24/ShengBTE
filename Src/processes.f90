@@ -181,7 +181,7 @@ contains
     Vp_plus_c= cmplx(0.0_dp,0.0_dp,kind=dp)
     
     do ll=1,Ntri
-       prefactor=inv_root_mmm(Index_i(ll),Index_j(ll),Index_k(ll))*&
+       prefactor=inv_root_mmm(types(Index_i(ll)),types(Index_j(ll)),types(Index_k(ll)))*&
             phexp(dot_product(realqprime,R_j(:,ll))-dot_product(realqdprime,R_k(:,ll)))
        Vp0=cmplx(0.0_dp,0.0_dp,kind=dp)
 
