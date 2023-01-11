@@ -42,6 +42,10 @@ module config
   namelist /parameters/ T,scalebroad,rmin,rmax,dr,maxiter,nticks,eps,&
            T_min,T_max,T_step,omega_max
   logical :: nonanalytic,convergence,isotopes,autoisotopes,nanowires,onlyharmonic,espresso
+  ! Number of threads requested by user
+  ! Later overwritten to number of threads systems allows
+  integer :: nthreads
+
   namelist /flags/ nonanalytic,convergence,isotopes,autoisotopes,&
        nanowires,onlyharmonic,espresso,nthreads
 
@@ -71,9 +75,6 @@ module config
   integer,allocatable :: Naccum_plus_array(:),Naccum_minus_array(:)
   ! MPI variables, assigned in ShengBTE.f90.
   integer :: myid,numprocs,nstates
-  ! Number of threads requested by user
-  ! Later overwritten to number of threads systems allows
-  integer :: nthreads
 
 contains
 
