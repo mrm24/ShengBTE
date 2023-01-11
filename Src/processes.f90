@@ -4,6 +4,7 @@
 !  Copyright (C) 2012-2023 Nebil Ayape Katcho <nebil.ayapekatcho@cea.fr>
 !  Copyright (C) 2012-2023 Natalio Mingo Bisquert <natalio.mingo@cea.fr>
 !  Copyright (C) 2021-2022 Fanchen Meng <fanchem@g.clemson.edu>
+!  Copyright (C) 2022-2023 Ben Durham <bd740@york.ac.uk>
 !
 !  This program is free software: you can redistribute it and/or modify
 !  it under the terms of the GNU General Public License as published by
