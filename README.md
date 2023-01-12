@@ -19,7 +19,7 @@ git clone git@bitbucket.org/sousaw/shengbte.git ShengBTE
 
 or from one of the many graphical frontends available.
 
-To compile the code it is enough to run `make` in the `Src` subdirectory of the distribution, but a suitable `arch.make` must be present in that directory. An example is provided as `arch.make.example`. As a minimum, `$MPIFC` must contain a valid command to compile Fortran 90 code with MPI directives, while the combination of `$LDFLAGS` and `$LIBS` must contain any linker flags required in order to link against an implementation of `LAPACK` and against Atsushi Togo's [spglib](http://spglib.sourceforge.net/). ShengBTE uses some Fortran 2003 extensions, most notably its new syntax for array initialization, and a recent Fortran compiler is required that supports them; `gfortran` 4.8.2 and `ifort` 12.0.0 are known to work. To compile with OpenMP threading enabled the relevant compiler flag must also be used.
+To compile the code it is enough to run `make` in the `Src` subdirectory of the distribution, but a suitable `arch.make` must be present in that directory. An example is provided as `arch.make.example`. As a minimum, `$MPIFC` must contain a valid command to compile Fortran 90 code with MPI directives, while the combination of `$LDFLAGS` and `$LIBS` must contain any linker flags required in order to link against an implementation of `LAPACK` and against Atsushi Togo's [spglib](http://spglib.sourceforge.net/). ShengBTE uses some Fortran 2003 extensions, most notably its new syntax for array initialization, and a recent Fortran compiler is required that supports them; modern versions of both `gfortran` and `ifort` are known to work. To compile with OpenMP threading enabled the relevant compiler flag must also be used.
 
 After compilation succeeds, a `ShengBTE` binary will be created in the root directory of the distribution. This executable takes no command-line options and accepts no input from the terminal. It can be invoked simply as
 
@@ -35,7 +35,7 @@ mpirun -n 32 ./ShengBTE 2>BTE.err >BTE.out
 
 often as part of a script to be submitted to a batch system.
 
-`ShengBTE` is a hybrid MPI+OpenMP application, the number of threads that will be used can be specified in the `CONTROL` file, see below. In general, increasing the threading is found to offer better parallel scaling verses MPI processes provided that the threads are within the same NUMA region. When setting up your calculation, you should aim for one MPI process per NUMA region with each MPI process using the number of threads available in that NUMA region. E.g. for a CPU with 16 NUMA regions each with 8 physical cores, you should run `ShengBTE` over 16 MPI processes with 8 threads each. In this example scenario, after editing your input files to allow threading, you might run with a command like
+`ShengBTE` is a hybrid MPI+OpenMP application, and the number of threads that will be used can be specified in the `CONTROL` file (see below). In general, using more threads is found to lead to better parallel scaling compared to MPI processes, provided that said threads operate within the same NUMA region. When setting up your calculation, you should aim for one MPI process per NUMA region with each MPI process using the number of threads available in that NUMA region. For instance, for a CPU with 16 NUMA regions with 8 physical cores each, you should run `ShengBTE` parallelized over 16 MPI processes with 8 threads each. In this example scenario, after editing your input files to allow threading, you might run with a command like
 
 ```bash
 OMP_NUM_THREADS=8 mpirun -n 16 -map-by numa:PE=8 ./ShengBTE 2>BTE.err >BTE.out
@@ -85,7 +85,7 @@ The contents of this file describe the system to be studied and specify a set of
     - `nanowires` (logical, default=.false.): study the thermal conductivity of nanowires in addition to that of the bulk
     - `onlyharmonic` (logical, default=.false.): stop the program after computing the specific heat and small-grain thermal conductivity
     - `espresso` (logical, default=.false.): read second-order force constants from `espresso.ifc2` (Quantum Espresso format) instead of the default `FORCE_CONSTANTS_2ND` (Phonopy format)
-    - `nthreads` (integer, default=1): number of OpenMP threads each MPI process in the program will use. If `nthreads<0` the program will use the maximum number of threads available, usually the value of environment variable `OMP_NUM_THREADS`
+    - `nthreads` (integer, default=1): number of OpenMP threads each MPI process in the program will use. If `nthreads<0`, the program will use the maximum number of threads available, which is usually the value of environment variable `OMP_NUM_THREADS`
 
 ### The `FORCE_CONSTANTS_2ND` file
 
