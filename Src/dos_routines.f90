@@ -22,6 +22,7 @@
 ! Routines to calculate the density of states and related quantities.
 module dos_routines
   use config
+  use mpi_f08
   use data, only : dp
   implicit none
 
@@ -144,7 +145,9 @@ contains
     pdos=pdos/real(nptk,kind=dp)
   end subroutine calc_dos
 
-  ! Compute the DOS, the projected DOS and the isotopic scattering rates.
+  ! Compute all the isotopic information, including the matrix elements for
+  ! the iterative procedure in global object (TODO: remove global object, and
+  ! pass it by reference)
   subroutine calc_isotopescatt(omega,velocity,eigenvect,nlist,list,&
        rate_scatt_isotope)
     implicit none
@@ -154,42 +157,90 @@ contains
     complex(kind=dp),intent(in) :: eigenvect(nbands,nbands,nptk)
     integer,intent(in) :: nlist
     integer,intent(in) :: list(nptk)
-    
+
     real(kind=dp),intent(out) :: rate_scatt_isotope(nbands,nlist)
 
-    integer :: ii,jj,kk,mm,nn
-    real(kind=dp) :: sigma(nbands,nptk),thisomega,thissigma,weight,prod
+    integer :: ii,jj,kk,mm,nn,ib,iq, ncount
+    real(kind=dp) :: sigma(nbands,nptk),thisomega,thissigma,weight,prod,GammaIso
 
     call calc_sigma0(velocity,sigma)
     call refine_sigma(sigma)
-    
+
     rate_scatt_isotope=0.0_dp
 
-    do mm=1,Nlist
-       do nn=1,Nbands
-          thisomega=omega(nn,list(mm))
-          if(thisomega==0.0_dp) then
-             cycle
-          end if
-          do ii=1,nptk
-             do jj=1,Nbands
-                thissigma=sigma(jj,ii)
-                weight=exp(-(thisomega-omega(jj,ii))**2/(thissigma**2))&
-                     /thissigma/sqrt(pi)
-                if(abs(thisomega-omega(jj,ii)).lt.2.5_dp*thissigma) then
-                      do kk=1,natoms
-                         prod=(abs(dot_product(&
-                              eigenvect(((kk-1)*3+1):((kk-1)*3+3),nn,list(mm)),&
-                              eigenvect(((kk-1)*3+1):((kk-1)*3+3),jj,ii))))**2
-                         rate_scatt_isotope(nn,mm)=rate_scatt_isotope(nn,mm)+&
-                              weight*prod*gfactors(types(kk))
-                      end do
-                end if
-             end do
-          end do
-             rate_scatt_isotope(nn,mm)=rate_scatt_isotope(nn,mm)/&
-                  (2.0_dp*nptk)*pi*thisomega**2
-       end do
-    end do
+    !Driver
+    ! Get sizes to store matrix elements
+    do nn=1,nstates
+      mm=myid*nstates+nn
+      if (mm.gt.nlist*nbands) then
+         cycle
+      end if
+      ! Get the indexes
+      ib=modulo(mm-1,Nbands)+1
+      iq=int((mm-1)/Nbands)+1
+      thisomega=omega(ib,list(iq))
+      if(thisomega==0.0_dp) then
+         cycle
+      end if
+      do ii=1,nptk
+         do jj=1,Nbands
+            thissigma=sigma(jj,ii)
+            if(abs(thisomega-omega(jj,ii)).lt.2.5_dp*thissigma) then
+                  IsoInfo%nisotopic = IsoInfo%nisotopic + 1
+            end if
+         end do
+      end do
+    end do ! nn
+
+    ! Allocate isotopic information
+    allocate(IsoInfo%Indof1stPhononIso(IsoInfo%nisotopic),&
+             IsoInfo%Indof2ndPhononIso(IsoInfo%nisotopic),&
+             IsoInfo%Gamma_isotopic(IsoInfo%nisotopic))
+
+    ! Compute isotopic scattering information
+    ncount = 0
+    do nn=1,nstates
+      mm=myid*nstates+nn
+      if (mm.gt.nlist*nbands) then
+         cycle
+      end if
+      ! Get the indexes
+      ib=modulo(mm-1,Nbands)+1
+      iq=int((mm-1)/Nbands)+1
+      thisomega=omega(ib,list(iq))
+      if(thisomega==0.0_dp) then
+         cycle
+      end if
+      do ii=1,nptk
+         do jj=1,Nbands
+            thissigma=sigma(jj,ii)
+            weight=exp(-(thisomega-omega(jj,ii))**2/(thissigma**2))&
+                 /thissigma/sqrt(pi)
+            GammaIso = 0.0_dp
+            if(abs(thisomega-omega(jj,ii)).lt.2.5_dp*thissigma) then
+                  do kk=1,natoms
+                     prod=(abs(dot_product(&
+                          eigenvect(((kk-1)*3+1):((kk-1)*3+3),nn,list(mm)),&
+                          eigenvect(((kk-1)*3+1):((kk-1)*3+3),jj,ii))))**2
+                     GammaIso=GammaIso+&
+                          weight*prod*gfactors(types(kk))
+                  end do
+                  GammaIso = GammaIso/&
+                     (2.0_dp*nptk)*pi*thisomega**2
+                  ncount = ncount + 1
+                  IsoInfo%Indof1stPhononIso(ncount) = mm
+                  IsoInfo%Indof2ndPhononIso(ncount) = ii * Nbands + jj
+                  IsoInfo%Gamma_isotopic(ncount) = GammaIso
+                  rate_scatt_isotope(ib,iq) = rate_scatt_isotope(ib,iq)+&
+                     GammaIso
+            end if
+         end do
+      end do
+    end do ! nn
+
+    !Now collapse over procs
+    call MPI_ALLREDUCE(MPI_IN_PLACE,rate_scatt_isotope,Nbands*Nlist,&
+      MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,nn)
+
   end subroutine calc_isotopescatt
 end module dos_routines

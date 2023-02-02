@@ -114,6 +114,27 @@ contains
     end do !nnn
     !$OMP END PARALLEL DO
 
+    ! Isotopic contribution to iterative value
+    if ((IsoInfo%nisotopic .ne. 0)) then
+        !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(nbands,IsoInfo) &
+        !$OMP & shared(Nequi,F_n,ID_equi,TypeofSymmetry,ALLEquiList,DeltaF) &
+        !$OMP & private(i,j,kk,ll,nn,jj)
+        do jj=1,IsoInfo%nisotopic
+            ! q and ib of input phonon
+            i  = modulo(IsoInfo%Indof1stPhononIso(jj)-1,Nbands)+1
+            ll = int((IsoInfo%Indof1stPhononIso(jj)-1)/Nbands)+1
+            ! q and ib of outcome phonon
+            j  = modulo(IsoInfo%Indof2ndPhononIso(jj)-1,Nbands)+1
+            kk = int((IsoInfo%Indof2ndPhononIso(jj)-1)/Nbands)+1
+            !Iterate over equivalence class of first phonon
+            do nn=1,Nequi(ll)
+               DeltaF(:,i,ALLEquiList(nn,ll))=DeltaF(:,i,ALLEquiList(nn,ll))+&
+                  IsoInfo%gamma_isotopic(jj)*F_n(:,j,ID_equi(TypeofSymmetry(nn,ll),kk))
+            end do !nn
+        end do !jj
+        !$OMP END PARALLEL DO
+    end if
+
     call MPI_BARRIER(MPI_COMM_WORLD,mmm)
     call MPI_ALLREDUCE(MPI_IN_PLACE,DeltaF,nptk*nbands*3,MPI_DOUBLE_PRECISION,&
          MPI_SUM,MPI_COMM_WORLD,mm)
@@ -194,6 +215,27 @@ contains
         end do !kk
     end do ! nnn
     !$OMP END PARALLEL DO
+
+    ! Isotopic contribution to iterative value
+    if ((IsoInfo%nisotopic .ne. 0)) then
+        !$OMP PARALLEL DO default(none) schedule(dynamic,1) shared(nbands,IsoInfo) &
+        !$OMP & shared(Nequi,F_n,ID_equi,TypeofSymmetry,ALLEquiList,DeltaF) &
+        !$OMP & private(i,j,kk,ll,nn,jj)
+        do jj=1,IsoInfo%nisotopic
+            ! q and ib of input phonon
+            i  = modulo(IsoInfo%Indof1stPhononIso(jj)-1,Nbands)+1
+            ll = int((IsoInfo%Indof1stPhononIso(jj)-1)/Nbands)+1
+            ! q and ib of outcome phonon
+            j  = modulo(IsoInfo%Indof2ndPhononIso(jj)-1,Nbands)+1
+            kk = int((IsoInfo%Indof2ndPhononIso(jj)-1)/Nbands)+1
+            !Iterate over equivalence class of first phonon
+            do nn=1,Nequi(ll)
+               DeltaF(i,ALLEquiList(nn,ll))=DeltaF(i,ALLEquiList(nn,ll))+&
+                  IsoInfo%gamma_isotopic(jj)*F_n(j,ID_equi(TypeofSymmetry(nn,ll),kk))
+            end do !nn
+        end do !jj
+        !$OMP END PARALLEL DO
+    end if
 
     call MPI_BARRIER(MPI_COMM_WORLD,mmm)
     call MPI_ALLREDUCE(MPI_IN_PLACE,DeltaF,nptk*nbands,MPI_DOUBLE_PRECISION,&

@@ -50,6 +50,19 @@ module config
   namelist /flags/ nonanalytic,convergence,isotopes,autoisotopes,&
        nanowires,onlyharmonic,espresso,nthreads
 
+   !Type for isotopic scattering
+   type isotopic_information
+        ! Information about phonons
+        integer, allocatable      :: Indof1stPhononIso(:)
+        integer, allocatable      :: Indof2ndPhononIso(:)
+        ! Matrix elements for isotopic processes in given proc
+        real(kind=dp),allocatable :: Gamma_isotopic(:)
+        ! Number of isotopic processes in given proc
+        integer :: nisotopic = 0
+   end type isotopic_information
+
+
+
   integer       :: nbands,nptk,nwires
   real(kind=dp) :: cgrid,V,rV,rlattvec(3,3),slattvec(3,3)
   real(kind=dp),allocatable :: cartesian(:,:),uorientations(:,:)
@@ -76,6 +89,8 @@ module config
   integer,allocatable :: Naccum_plus_array(:),Naccum_minus_array(:)
   ! MPI variables, assigned in ShengBTE.f90.
   integer :: myid,numprocs,nstates
+  ! Isotopic information
+  type(isotopic_information) :: IsoInfo
 
 contains
 
